@@ -17,9 +17,9 @@ from PIL import Image
 # Import our custom modules
 import sys
 sys.path.append('.')
-from soil_health_interface import SoilHealthPredictor, ESP32Interface
-from plant_recommendation import PlantRecommendationSystem
-from mistral_soil_analysis import MistralSoilAnalysis
+from utils.soil_health_interface import SoilHealthPredictor, ESP32Interface
+from src.models.plant_recommendation import PlantRecommendationSystem
+from src.api.mistral_soil_analysis import MistralSoilAnalysis
 
 # Set page configuration
 st.set_page_config(

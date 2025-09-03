@@ -16,7 +16,7 @@ class MistralSoilAnalysis:
         """
         self.api_key = api_key
         self.api_url = "https://api.mistral.ai/v1/chat/completions"
-        self.client = None  # Initialize client attribute
+        self.client = self  # Use self as client for compatibility
     
     def set_api_key(self, api_key):
         """
@@ -226,10 +226,75 @@ class MistralSoilAnalysis:
         except Exception as e:
             return {"error": f"Failed to parse response: {str(e)}", "raw_response": response}
 
+    def chat(self, model, messages, temperature=0.7, max_tokens=1024):
+        """
+        Custom implementation of chat functionality for Mistral AI.
+        
+        Args:
+            model (str): The model to use for chat completion.
+            messages (list): List of message dictionaries with role and content.
+            temperature (float): Temperature parameter for response generation.
+            max_tokens (int): Maximum number of tokens to generate.
+            
+        Returns:
+            dict: A response object with choices containing the generated message.
+        """
+        if not self.api_key:
+            raise ValueError("API key not set. Please set the API key first.")
+        
+        # Prepare the request payload
+        payload = {
+            "model": model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens
+        }
+        
+        # Set up headers
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "Authorization": f"Bearer {self.api_key}"
+        }
+        
+        try:
+            # Make the API request
+            response = requests.post(
+                self.api_url,
+                headers=headers,
+                data=json.dumps(payload)
+            )
+            
+            # Check if the request was successful
+            if response.status_code == 200:
+                result = response.json()
+                
+                # Create a response object with the same structure expected by the application
+                class ChatResponse:
+                    class Choice:
+                        class Message:
+                            def __init__(self, content):
+                                self.content = content
+                        
+                        def __init__(self, message_content):
+                            self.message = self.Message(message_content)
+                    
+                    def __init__(self, choices):
+                        self.choices = [self.Choice(choice["message"]["content"]) 
+                                      for choice in choices]
+                
+                return ChatResponse(result["choices"])
+            else:
+                # Raise an exception with error details
+                response.raise_for_status()
+        
+        except Exception as e:
+            raise Exception(f"An error occurred during chat: {str(e)}")
+
 # Example usage
 if __name__ == "__main__":
     # Initialize the Mistral AI integration
-    mistral = MistralSoilAnalysis(api_key="yQdfM8MLbX9uhInQ7id4iUTwN4h4pDLX")
+    mistral = MistralSoilAnalysis(api_key="your_api_key_here")
     
     # Example soil data
     soil_data = {
