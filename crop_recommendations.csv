@@ -1,0 +1,31 @@
+crop,n_min,n_max,p_min,p_max,k_min,k_max,ph_min,ph_max,temperature_min,temperature_max,description,market_price
+Rice,80,120,20,30,30,60,5.5,6.5,22,30,A staple food crop that grows well in warm and humid conditions with good water availability.,1800
+Wheat,100,150,25,35,25,50,6.0,7.5,15,24,A major cereal grain suitable for temperate climates with moderate water requirements.,1950
+Maize (Corn),140,200,30,45,30,60,5.5,7.5,18,30,A versatile grain crop that requires good sunlight and moderate water.,1750
+Potato,100,150,45,65,80,120,5.0,6.5,15,25,A tuber crop that grows well in loose soil with good drainage.,1500
+Tomato,120,180,30,50,120,180,5.5,7.0,20,27,A popular vegetable crop that requires well-drained soil and regular watering.,2200
+Onion,80,120,35,45,80,120,6.0,7.0,15,25,A bulb vegetable that prefers well-drained soil and moderate watering.,1600
+Cabbage,150,200,40,60,120,180,6.0,7.5,15,24,A leafy vegetable that grows well in cool weather with consistent moisture.,1400
+Carrot,80,120,30,50,80,120,6.0,7.0,15,25,A root vegetable that prefers loose soil with good drainage.,1350
+Cauliflower,150,200,60,80,60,100,6.0,7.0,15,22,A cool-season crop that requires consistent moisture and fertile soil.,1800
+Brinjal (Eggplant),100,150,50,70,50,80,5.5,6.5,22,30,A warm-season crop that requires well-drained soil and regular watering.,1650
+Chilli (Pepper),120,180,30,50,30,60,6.0,7.0,20,30,A warm-season crop that requires well-drained soil and moderate watering.,2500
+Okra (Lady Finger),80,120,30,50,40,80,6.0,7.0,22,35,A warm-season crop that requires well-drained soil and regular watering.,1750
+Pea,60,90,30,50,30,60,6.0,7.5,15,24,A cool-season crop that requires well-drained soil and moderate watering.,2100
+Bean,80,120,30,50,30,60,6.0,7.0,18,30,A warm-season crop that requires well-drained soil and moderate watering.,1950
+Cucumber,100,150,40,60,80,120,5.5,7.0,18,30,A warm-season crop that requires well-drained soil and regular watering.,1400
+Pumpkin,100,150,45,65,80,120,5.5,7.0,18,30,A warm-season crop that requires well-drained soil and moderate watering.,1300
+Watermelon,100,150,45,65,80,120,5.5,7.0,22,30,A warm-season crop that requires well-drained soil and regular watering.,1600
+Mustard,60,90,30,50,30,60,5.5,7.0,15,25,A cool-season crop that requires well-drained soil and moderate watering.,2300
+Sunflower,80,120,30,50,30,60,6.0,7.5,18,30,An oilseed crop that requires well-drained soil and moderate watering.,2500
+Groundnut (Peanut),30,60,30,50,30,60,5.5,7.0,22,30,A legume crop that requires well-drained soil and moderate watering.,4500
+Soybean,30,60,30,50,30,60,6.0,7.0,20,30,A legume crop that requires well-drained soil and moderate watering.,3800
+Cotton,100,150,30,50,50,80,5.5,7.0,20,30,A fiber crop that requires well-drained soil and moderate watering.,5500
+Sugarcane,150,200,45,65,80,120,6.0,7.5,22,35,A perennial grass crop that requires well-drained soil and regular watering.,3000
+Turmeric,100,150,50,70,120,180,6.0,7.0,20,30,A rhizome crop that requires well-drained soil and regular watering.,6500
+Ginger,100,150,50,70,80,120,5.5,6.5,20,30,A rhizome crop that requires well-drained soil and regular watering.,7000
+Garlic,100,150,50,70,50,80,6.0,7.0,15,25,A bulb crop that requires well-drained soil and moderate watering.,8000
+Coriander,60,90,30,50,30,60,6.0,7.0,15,25,A herb crop that requires well-drained soil and moderate watering.,2000
+Fenugreek,30,60,30,50,30,60,6.0,7.0,15,25,A herb crop that requires well-drained soil and moderate watering.,1800
+Spinach,100,150,30,50,50,80,6.0,7.0,15,25,A leafy vegetable that requires well-drained soil and regular watering.,1400
+Lettuce,100,150,30,50,80,120,6.0,7.0,15,22,A leafy vegetable that requires well-drained soil and regular watering.,1600
