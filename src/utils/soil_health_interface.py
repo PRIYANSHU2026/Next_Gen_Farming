@@ -27,6 +27,13 @@ class SoilHealthPredictor:
             self.model = None
             # Create a fallback model for demonstration purposes
             self._create_fallback_model()
+        
+        # NPK reference ranges for interpretation
+        self.npk_ranges = {
+            'N': {'low': 0, 'medium': 100, 'high': 140, 'very_high': 200},
+            'P': {'low': 0, 'medium': 5, 'high': 10, 'very_high': 15},
+            'K': {'low': 0, 'medium': 100, 'high': 200, 'very_high': 300}
+        }
     
     def predict_fertility(self, soil_data):
         """Predict soil fertility based on soil parameters"""
@@ -52,14 +59,92 @@ class SoilHealthPredictor:
             fertility_categories = ["Less Fertile", "Fertile", "Highly Fertile"]
             result = fertility_categories[prediction]
             
+            # Add NPK predictions
+            npk_predictions = self.predict_npk_levels(soil_data)
+            
             return {
                 "fertility_class": prediction,
                 "fertility_label": result,
-                "confidence": self._get_confidence(input_df)
+                "confidence": self._get_confidence(input_df),
+                **npk_predictions  # Include NPK predictions in the result
             }
         except Exception as e:
             print(f"❌ Prediction error: {e}")
             return {"error": str(e)}
+            
+    def predict_npk_levels(self, soil_data):
+        """Predict and categorize NPK levels based on sensor readings"""
+        try:
+            # Extract NPK values from soil data
+            n_value = soil_data.get('nitrogen', soil_data.get('N', 0))
+            p_value = soil_data.get('phosphorus', soil_data.get('P', 0))
+            k_value = soil_data.get('potassium', soil_data.get('K', 0))
+            
+            # Categorize N level
+            if n_value < self.npk_ranges['N']['medium']:
+                n_category = "Low"
+                n_recommendation = "Increase nitrogen with organic matter or nitrogen-rich fertilizers."
+            elif n_value < self.npk_ranges['N']['high']:
+                n_category = "Medium"
+                n_recommendation = "Maintain current nitrogen levels with regular fertilization."
+            elif n_value < self.npk_ranges['N']['very_high']:
+                n_category = "High"
+                n_recommendation = "Good nitrogen levels. Monitor to prevent excess."
+            else:
+                n_category = "Very High"
+                n_recommendation = "Reduce nitrogen applications to prevent leaching and plant burn."
+            
+            # Categorize P level
+            if p_value < self.npk_ranges['P']['medium']:
+                p_category = "Low"
+                p_recommendation = "Add phosphorus-rich amendments like bone meal or rock phosphate."
+            elif p_value < self.npk_ranges['P']['high']:
+                p_category = "Medium"
+                p_recommendation = "Maintain phosphorus with balanced fertilization."
+            elif p_value < self.npk_ranges['P']['very_high']:
+                p_category = "High"
+                p_recommendation = "Good phosphorus levels. Monitor to prevent excess."
+            else:
+                p_category = "Very High"
+                p_recommendation = "Avoid additional phosphorus to prevent water pollution."
+            
+            # Categorize K level
+            if k_value < self.npk_ranges['K']['medium']:
+                k_category = "Low"
+                k_recommendation = "Add potassium with wood ash, seaweed, or potassium sulfate."
+            elif k_value < self.npk_ranges['K']['high']:
+                k_category = "Medium"
+                k_recommendation = "Maintain potassium with regular balanced fertilization."
+            elif k_value < self.npk_ranges['K']['very_high']:
+                k_category = "High"
+                k_recommendation = "Good potassium levels. Monitor to prevent excess."
+            else:
+                k_category = "Very High"
+                k_recommendation = "Reduce potassium applications to maintain balance with other nutrients."
+            
+            # Calculate health percentages (0-100%)
+            n_health = min(100, max(0, (n_value / self.npk_ranges['N']['very_high']) * 100))
+            p_health = min(100, max(0, (p_value / self.npk_ranges['P']['very_high']) * 100))
+            k_health = min(100, max(0, (k_value / self.npk_ranges['K']['very_high']) * 100))
+            
+            # Return NPK predictions and recommendations
+            return {
+                "n_value": n_value,
+                "n_category": n_category,
+                "n_recommendation": n_recommendation,
+                "n_health": round(n_health, 1),
+                "p_value": p_value,
+                "p_category": p_category,
+                "p_recommendation": p_recommendation,
+                "p_health": round(p_health, 1),
+                "k_value": k_value,
+                "k_category": k_category,
+                "k_recommendation": k_recommendation,
+                "k_health": round(k_health, 1),
+            }
+        except Exception as e:
+            print(f"❌ NPK prediction error: {e}")
+            return {}
     
     def _estimate_missing_parameters(self, soil_data, missing_features):
         """Estimate missing soil parameters based on temperature and moisture"""

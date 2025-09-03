@@ -18,8 +18,8 @@ from PIL import Image
 import sys
 sys.path.append('.')
 from utils.soil_health_interface import SoilHealthPredictor, ESP32Interface
-from src.models.plant_recommendation import PlantRecommendationSystem
-from src.api.mistral_soil_analysis import MistralSoilAnalysis
+from models.plant_recommendation import PlantRecommendationSystem
+from api.mistral_soil_analysis import MistralSoilAnalysis
 
 # Set page configuration
 st.set_page_config(
@@ -32,43 +32,186 @@ st.set_page_config(
 # Custom CSS
 st.markdown("""
 <style>
+    /* Main Theme Colors */
+    :root {
+        --farm-green-dark: #2E7D32;
+        --farm-green-medium: #388E3C;
+        --farm-green-light: #689F38;
+        --farm-brown: #795548;
+        --farm-soil: #5D4037;
+        --farm-wheat: #F9A825;
+        --farm-sky: #64B5F6;
+        --farm-bg-light: #F1F8E9;
+    }
+    
+    /* Typography */
     .main-header {
         font-size: 2.5rem;
-        color: #2E7D32;
+        color: var(--farm-green-dark);
         text-align: center;
         margin-bottom: 1rem;
+        font-family: 'Roboto Slab', serif;
+        text-shadow: 1px 1px 2px rgba(0,0,0,0.1);
+        background: linear-gradient(to right, var(--farm-green-dark), var(--farm-green-medium));
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        padding: 10px;
     }
+    
     .sub-header {
         font-size: 1.5rem;
-        color: #388E3C;
+        color: var(--farm-green-medium);
         margin-bottom: 0.5rem;
+        border-bottom: 2px solid var(--farm-green-light);
+        padding-bottom: 5px;
+        font-family: 'Roboto', sans-serif;
     }
+    
+    /* Cards */
     .card {
-        background-color: #F1F8E9;
+        background-color: var(--farm-bg-light);
         border-radius: 10px;
         padding: 1.5rem;
         box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        border-left: 4px solid var(--farm-green-medium);
+        transition: transform 0.2s;
     }
+    
+    .card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+    }
+    
+    /* NPK Cards */
+    .npk-card {
+        background-color: var(--farm-bg-light);
+        border-radius: 10px;
+        padding: 1.5rem;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        margin-bottom: 1rem;
+        border-top: 4px solid var(--farm-green-medium);
+        transition: transform 0.2s;
+    }
+    
+    .npk-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+    }
+    
+    /* Metrics */
     .metric-label {
-        font-size: 1rem;
-        color: #689F38;
+        font-size: 1.1rem;
+        color: var(--farm-green-light);
         font-weight: bold;
+        font-family: 'Roboto', sans-serif;
+        display: flex;
+        align-items: center;
     }
+    
     .metric-value {
         font-size: 1.8rem;
         font-weight: bold;
+        font-family: 'Roboto Mono', monospace;
     }
+    
+    /* Fertility Classes */
     .fertility-high {
         color: #2E7D32;
         font-weight: bold;
     }
+    
     .fertility-medium {
         color: #FFA000;
         font-weight: bold;
     }
+    
     .fertility-low {
         color: #D32F2F;
         font-weight: bold;
+    }
+    
+    /* NPK Styling */
+    .npk-category {
+        font-size: 1.2rem;
+        font-weight: bold;
+        margin: 5px 0;
+        padding: 5px 10px;
+        border-radius: 5px;
+        display: inline-block;
+    }
+    
+    .low-category {
+        background-color: rgba(211, 47, 47, 0.1);
+        color: #D32F2F;
+        border: 1px solid #D32F2F;
+    }
+    
+    .medium-category {
+        background-color: rgba(255, 160, 0, 0.1);
+        color: #FFA000;
+        border: 1px solid #FFA000;
+    }
+    
+    .high-category {
+        background-color: rgba(46, 125, 50, 0.1);
+        color: #2E7D32;
+        border: 1px solid #2E7D32;
+    }
+    
+    .very-high-category {
+        background-color: rgba(21, 101, 192, 0.1);
+        color: #1565C0;
+        border: 1px solid #1565C0;
+    }
+    
+    .npk-health {
+        font-size: 0.9rem;
+        color: var(--farm-green-dark);
+        margin-top: 5px;
+        text-align: right;
+    }
+    
+    .npk-recommendation-title {
+        font-size: 0.9rem;
+        color: var(--farm-brown);
+        font-weight: bold;
+        margin-top: 10px;
+        margin-bottom: 5px;
+    }
+    
+    .npk-recommendation {
+        font-size: 0.85rem;
+        color: var(--farm-soil);
+        background-color: rgba(121, 85, 72, 0.1);
+        padding: 8px;
+        border-radius: 5px;
+        border-left: 3px solid var(--farm-brown);
+    }
+    
+    /* NPK Crop Items */
+    .npk-crop-item {
+        margin: 0.3rem 0;
+        padding-left: 0.5rem;
+        font-size: 0.95rem;
+        color: var(--farm-soil);
+    }
+    
+    /* NPK Cards Specific */
+    .n-card {
+        border-top: 4px solid #4CAF50; /* Nitrogen green */
+    }
+    
+    .p-card {
+        border-top: 4px solid #2196F3; /* Phosphorus blue */
+    }
+    
+    .k-card {
+        border-top: 4px solid #FF9800; /* Potassium orange */
+    }
+    
+    /* Progress Bar Customization */
+    .stProgress > div > div {
+        background-color: var(--farm-green-medium);
     }
 </style>
 """, unsafe_allow_html=True)
@@ -77,8 +220,9 @@ st.markdown("""
 @st.cache_data
 def load_crop_data():
     try:
-        # Load crop recommendations CSV
-        crop_recommendations_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "crop_recommendations.csv")
+        # Load crop recommendations CSV from project root directory
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        crop_recommendations_path = os.path.join(project_root, "crop_recommendations.csv")
         df = pd.read_csv(crop_recommendations_path)
         return df
     except Exception as e:
@@ -94,7 +238,8 @@ def init_session_state():
     if 'soil_predictor' not in st.session_state:
         st.session_state.soil_predictor = SoilHealthPredictor()
     if 'plant_recommender' not in st.session_state:
-        crop_recommendations_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "crop_recommendations.csv")
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        crop_recommendations_path = os.path.join(project_root, "crop_recommendations.csv")
         st.session_state.plant_recommender = PlantRecommendationSystem(crop_data_path=crop_recommendations_path)
     if 'mistral_analyzer' not in st.session_state:
         st.session_state.mistral_analyzer = MistralSoilAnalysis(api_key="yQdfM8MLbX9uhInQ7id4iUTwN4h4pDLX")
@@ -263,18 +408,21 @@ def process_data(data):
         if key in data:
             st.session_state.sensor_data[key].append(data[key])
     
-    # Make fertility prediction
+    # Make fertility prediction with NPK analysis
     fertility_prediction = predict_fertility(data)
     
     # Store current data and prediction
     st.session_state.current_data = data
     st.session_state.fertility_prediction = fertility_prediction
     
-    # Add to history
+    # Add to history with NPK categories
     history_entry = {
         'timestamp': timestamp,
         **data,
-        'fertility_class': fertility_prediction['fertility_label']
+        'fertility_class': fertility_prediction['fertility_label'],
+        'n_category': fertility_prediction.get('n_category', 'Unknown'),
+        'p_category': fertility_prediction.get('p_category', 'Unknown'),
+        'k_category': fertility_prediction.get('k_category', 'Unknown')
     }
     st.session_state.history_data.append(history_entry)
     
@@ -293,17 +441,39 @@ def predict_fertility(data):
         fertility_labels = ["Less Fertile", "Fertile", "Highly Fertile"]
         fertility_label = fertility_labels[fertility_class] if fertility_class in [0, 1, 2] else "Unknown"
         
-        return {
+        # Get NPK predictions
+        npk_result = st.session_state.soil_predictor.predict_npk_levels(data)
+        
+        # Combine fertility and NPK predictions
+        prediction = {
             'fertility_class': fertility_class,
             'fertility_label': fertility_label,
-            'confidence': result.get('confidence', 85.0)  # Default confidence if not provided
+            'confidence': result.get('confidence', 85.0),  # Default confidence if not provided
+            # Add NPK values, categories, recommendations and health percentages
+            'n_value': npk_result.get('n_value', 0),
+            'n_category': npk_result.get('n_category', 'Unknown'),
+            'n_recommendation': npk_result.get('n_recommendation', ''),
+            'n_health': npk_result.get('n_health', 0),
+            'p_value': npk_result.get('p_value', 0),
+            'p_category': npk_result.get('p_category', 'Unknown'),
+            'p_recommendation': npk_result.get('p_recommendation', ''),
+            'p_health': npk_result.get('p_health', 0),
+            'k_value': npk_result.get('k_value', 0),
+            'k_category': npk_result.get('k_category', 'Unknown'),
+            'k_recommendation': npk_result.get('k_recommendation', ''),
+            'k_health': npk_result.get('k_health', 0)
         }
+        
+        return prediction
     except Exception as e:
         print(f"Error predicting fertility: {e}")
         return {
             'fertility_class': 1,  # Default to "Fertile"
             'fertility_label': "Fertile",
-            'confidence': 50.0
+            'confidence': 50.0,
+            'n_value': 0, 'n_category': 'Unknown', 'n_recommendation': '', 'n_health': 0,
+            'p_value': 0, 'p_category': 'Unknown', 'p_recommendation': '', 'p_health': 0,
+            'k_value': 0, 'k_category': 'Unknown', 'k_recommendation': '', 'k_health': 0
         }
 
 # Get crop recommendations
@@ -771,7 +941,7 @@ def main_dashboard():
     st.markdown('</div>', unsafe_allow_html=True)
     
     # Tabs
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["Dashboard", "Manual Entry", "History", "Recommendations", "LLM Analysis", "AI Farmer Intelligence 🤖"])
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["Dashboard", "Manual Entry", "History", "Recommendations", "LLM Analysis", "AI Farmer Intelligence 🤖", "Help & Info 📚"])
     
     # Dashboard Tab
     with tab1:
@@ -867,6 +1037,137 @@ def main_dashboard():
                     )
                     
                     st.plotly_chart(fig, use_container_width=True)
+            
+            # NPK Analysis Section
+            st.markdown('<h2 class="sub-header">NPK Analysis</h2>', unsafe_allow_html=True)
+            
+            if st.session_state.fertility_prediction:
+                npk_data = st.session_state.fertility_prediction
+                
+                # Create three columns for N, P, K meters
+                col1, col2, col3 = st.columns(3)
+                
+                # Nitrogen Column
+                with col1:
+                    st.markdown('<div class="npk-card">', unsafe_allow_html=True)
+                    st.markdown('<p class="metric-label">Nitrogen (N)</p>', unsafe_allow_html=True)
+                    st.markdown(f'<p class="metric-value">{npk_data["n_value"]:.1f} mg/kg</p>', unsafe_allow_html=True)
+                    
+                    # Add N category with appropriate styling
+                    n_category = npk_data["n_category"]
+                    if n_category == "Low":
+                        n_color = "#FF5252"  # Red
+                    elif n_category == "Medium":
+                        n_color = "#FFC107"  # Amber
+                    elif n_category == "High":
+                        n_color = "#4CAF50"  # Green
+                    elif n_category == "Very High":
+                        n_color = "#2196F3"  # Blue
+                    else:
+                        n_color = "#9E9E9E"  # Grey
+                    
+                    # Display category and health percentage
+                    st.markdown(f'<p class="npk-category" style="color:{n_color}">{n_category}</p>', unsafe_allow_html=True)
+                    
+                    # Create progress bar for N health
+                    n_health = npk_data["n_health"]
+                    st.progress(n_health/100)
+                    st.markdown(f'<p class="npk-health">Health: {n_health}%</p>', unsafe_allow_html=True)
+                    
+                    # Display recommendation
+                    st.markdown('<p class="npk-recommendation-title">Recommendation:</p>', unsafe_allow_html=True)
+                    st.markdown(f'<p class="npk-recommendation">{npk_data["n_recommendation"]}</p>', unsafe_allow_html=True)
+                    st.markdown('</div>', unsafe_allow_html=True)
+                
+                # Phosphorus Column
+                with col2:
+                    st.markdown('<div class="npk-card">', unsafe_allow_html=True)
+                    st.markdown('<p class="metric-label">Phosphorus (P)</p>', unsafe_allow_html=True)
+                    st.markdown(f'<p class="metric-value">{npk_data["p_value"]:.1f} mg/kg</p>', unsafe_allow_html=True)
+                    
+                    # Add P category with appropriate styling
+                    p_category = npk_data["p_category"]
+                    if p_category == "Low":
+                        p_color = "#FF5252"  # Red
+                    elif p_category == "Medium":
+                        p_color = "#FFC107"  # Amber
+                    elif p_category == "High":
+                        p_color = "#4CAF50"  # Green
+                    elif p_category == "Very High":
+                        p_color = "#2196F3"  # Blue
+                    else:
+                        p_color = "#9E9E9E"  # Grey
+                    
+                    # Display category and health percentage
+                    st.markdown(f'<p class="npk-category" style="color:{p_color}">{p_category}</p>', unsafe_allow_html=True)
+                    
+                    # Create progress bar for P health
+                    p_health = npk_data["p_health"]
+                    st.progress(p_health/100)
+                    st.markdown(f'<p class="npk-health">Health: {p_health}%</p>', unsafe_allow_html=True)
+                    
+                    # Display recommendation
+                    st.markdown('<p class="npk-recommendation-title">Recommendation:</p>', unsafe_allow_html=True)
+                    st.markdown(f'<p class="npk-recommendation">{npk_data["p_recommendation"]}</p>', unsafe_allow_html=True)
+                    st.markdown('</div>', unsafe_allow_html=True)
+                
+                # Potassium Column
+                with col3:
+                    st.markdown('<div class="npk-card">', unsafe_allow_html=True)
+                    st.markdown('<p class="metric-label">Potassium (K)</p>', unsafe_allow_html=True)
+                    st.markdown(f'<p class="metric-value">{npk_data["k_value"]:.1f} mg/kg</p>', unsafe_allow_html=True)
+                    
+                    # Add K category with appropriate styling
+                    k_category = npk_data["k_category"]
+                    if k_category == "Low":
+                        k_color = "#FF5252"  # Red
+                    elif k_category == "Medium":
+                        k_color = "#FFC107"  # Amber
+                    elif k_category == "High":
+                        k_color = "#4CAF50"  # Green
+                    elif k_category == "Very High":
+                        k_color = "#2196F3"  # Blue
+                    else:
+                        k_color = "#9E9E9E"  # Grey
+                    
+                    # Display category and health percentage
+                    st.markdown(f'<p class="npk-category" style="color:{k_color}">{k_category}</p>', unsafe_allow_html=True)
+                    
+                    # Create progress bar for K health
+                    k_health = npk_data["k_health"]
+                    st.progress(k_health/100)
+                    st.markdown(f'<p class="npk-health">Health: {k_health}%</p>', unsafe_allow_html=True)
+                    
+                    # Display recommendation
+                    st.markdown('<p class="npk-recommendation-title">Recommendation:</p>', unsafe_allow_html=True)
+                    st.markdown(f'<p class="npk-recommendation">{npk_data["k_recommendation"]}</p>', unsafe_allow_html=True)
+                    st.markdown('</div>', unsafe_allow_html=True)
+                
+                # Add NPK Help Button
+                with st.expander("ℹ️ NPK Information"):
+                    st.markdown("""
+                    ### Understanding NPK Values
+                    
+                    **Nitrogen (N)**: Essential for leaf growth and green color. Measured in mg/kg.
+                    - Low: < 140 mg/kg - Plants may show yellowing of older leaves
+                    - Medium: 140-280 mg/kg - Adequate for most plants
+                    - High: 280-560 mg/kg - Good levels for leafy vegetables
+                    - Very High: > 560 mg/kg - May cause excessive vegetative growth
+                    
+                    **Phosphorus (P)**: Important for root development and flowering. Measured in mg/kg.
+                    - Low: < 10 mg/kg - Plants may have stunted growth and poor flowering
+                    - Medium: 10-20 mg/kg - Adequate for most plants
+                    - High: 20-40 mg/kg - Good for flowering and fruiting plants
+                    - Very High: > 40 mg/kg - May interfere with nutrient uptake
+                    
+                    **Potassium (K)**: Helps with overall plant health and disease resistance. Measured in mg/kg.
+                    - Low: < 200 mg/kg - Plants may have weak stems and poor disease resistance
+                    - Medium: 200-400 mg/kg - Adequate for most plants
+                    - High: 400-800 mg/kg - Good for root crops and stress resistance
+                    - Very High: > 800 mg/kg - May cause nutrient imbalances
+                    
+                    The **Health Percentage** indicates how optimal each nutrient level is for plant growth.
+                    """)
             
             # Soil Health Radar Chart
             st.markdown('<h2 class="sub-header">Soil Health Overview</h2>', unsafe_allow_html=True)
@@ -1003,8 +1304,26 @@ def main_dashboard():
             # Convert history data to DataFrame
             history_df = pd.DataFrame(st.session_state.history_data)
             
-            # Display history data
-            st.dataframe(history_df, use_container_width=True)
+            # Add styling to the dataframe
+            def highlight_npk_categories(val):
+                if val == 'Low':
+                    return 'background-color: #FFEBEE; color: #D32F2F; font-weight: bold'
+                elif val == 'Medium':
+                    return 'background-color: #FFF8E1; color: #FFA000; font-weight: bold'
+                elif val == 'High':
+                    return 'background-color: #E8F5E9; color: #2E7D32; font-weight: bold'
+                elif val == 'Very High':
+                    return 'background-color: #E3F2FD; color: #1976D2; font-weight: bold'
+                return ''
+            
+            # Apply styling to NPK category columns
+            styled_df = history_df.style.applymap(
+                highlight_npk_categories, 
+                subset=['n_category', 'p_category', 'k_category']
+            )
+            
+            # Display styled history data
+            st.dataframe(styled_df, use_container_width=True)
             
             # Download button
             csv = history_df.to_csv(index=False)
@@ -1024,7 +1343,7 @@ def main_dashboard():
                 ["temperature", "moisture", "nitrogen", "phosphorus", "potassium"]
             )
             
-            # Create line chart
+            # Create line chart with improved styling
             fig = px.line(
                 history_df,
                 x="timestamp",
@@ -1032,7 +1351,104 @@ def main_dashboard():
                 title=f"{param.capitalize()} Over Time"
             )
             
+            # Update chart styling
+            fig.update_layout(
+                plot_bgcolor='rgba(240, 248, 235, 0.6)',
+                paper_bgcolor='rgba(0,0,0,0)',
+                font_family="Roboto",
+                title_font_family="Roboto Slab",
+                title_font_color="#388E3C",
+                legend_title_font_color="#388E3C"
+            )
+            
+            # Update line color based on parameter
+            if param == "nitrogen":
+                fig.update_traces(line_color="#4CAF50")
+            elif param == "phosphorus":
+                fig.update_traces(line_color="#2196F3")
+            elif param == "potassium":
+                fig.update_traces(line_color="#FF9800")
+            elif param == "temperature":
+                fig.update_traces(line_color="#F44336")
+            elif param == "moisture":
+                fig.update_traces(line_color="#03A9F4")
+            
             st.plotly_chart(fig, use_container_width=True)
+            
+            # NPK Category Distribution
+            st.markdown('<h2 class="sub-header">NPK Category Distribution</h2>', unsafe_allow_html=True)
+            
+            # Create three columns for N, P, K category distribution
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                # Count N categories
+                n_counts = history_df['n_category'].value_counts().reset_index()
+                n_counts.columns = ['Category', 'Count']
+                
+                # Create pie chart for N categories
+                fig_n = px.pie(
+                    n_counts, 
+                    values='Count', 
+                    names='Category',
+                    title='Nitrogen Categories',
+                    color='Category',
+                    color_discrete_map={
+                        'Low': '#FF5252',
+                        'Medium': '#FFC107',
+                        'High': '#4CAF50',
+                        'Very High': '#2196F3',
+                        'Unknown': '#9E9E9E'
+                    }
+                )
+                fig_n.update_layout(title_font_color="#388E3C")
+                st.plotly_chart(fig_n, use_container_width=True)
+            
+            with col2:
+                # Count P categories
+                p_counts = history_df['p_category'].value_counts().reset_index()
+                p_counts.columns = ['Category', 'Count']
+                
+                # Create pie chart for P categories
+                fig_p = px.pie(
+                    p_counts, 
+                    values='Count', 
+                    names='Category',
+                    title='Phosphorus Categories',
+                    color='Category',
+                    color_discrete_map={
+                        'Low': '#FF5252',
+                        'Medium': '#FFC107',
+                        'High': '#4CAF50',
+                        'Very High': '#2196F3',
+                        'Unknown': '#9E9E9E'
+                    }
+                )
+                fig_p.update_layout(title_font_color="#388E3C")
+                st.plotly_chart(fig_p, use_container_width=True)
+            
+            with col3:
+                # Count K categories
+                k_counts = history_df['k_category'].value_counts().reset_index()
+                k_counts.columns = ['Category', 'Count']
+                
+                # Create pie chart for K categories
+                fig_k = px.pie(
+                    k_counts, 
+                    values='Count', 
+                    names='Category',
+                    title='Potassium Categories',
+                    color='Category',
+                    color_discrete_map={
+                        'Low': '#FF5252',
+                        'Medium': '#FFC107',
+                        'High': '#4CAF50',
+                        'Very High': '#2196F3',
+                        'Unknown': '#9E9E9E'
+                    }
+                )
+                fig_k.update_layout(title_font_color="#388E3C")
+                st.plotly_chart(fig_k, use_container_width=True)
         else:
             st.info("No historical data available.")
     
@@ -1043,6 +1459,119 @@ def main_dashboard():
         if st.session_state.current_data and st.session_state.fertility_prediction:
             # Get recommendations
             recommendations = get_crop_recommendations(st.session_state.current_data, st.session_state.fertility_prediction)
+            
+            # NPK-based Recommendations
+            st.markdown('<h3 class="sub-header">NPK-Specific Recommendations</h3>', unsafe_allow_html=True)
+            
+            if 'npk_values' in st.session_state.fertility_prediction and 'npk_categories' in st.session_state.fertility_prediction:
+                npk_values = st.session_state.fertility_prediction['npk_values']
+                npk_categories = st.session_state.fertility_prediction['npk_categories']
+                npk_recommendations = st.session_state.fertility_prediction.get('npk_recommendations', {})
+                
+                # Create three columns for N, P, K specific recommendations
+                col_n, col_p, col_k = st.columns(3)
+                
+                with col_n:
+                    st.markdown(f'<div class="npk-card n-card">', unsafe_allow_html=True)
+                    st.markdown(f'<p class="metric-label">Nitrogen-Loving Crops</p>', unsafe_allow_html=True)
+                    n_category = npk_categories.get('nitrogen', 'Unknown')
+                    n_crops = []
+                    
+                    if n_category == 'Low':
+                        n_crops = ['Legumes (Beans, Peas)', 'Clover', 'Alfalfa']
+                    elif n_category == 'Medium':
+                        n_crops = ['Tomatoes', 'Peppers', 'Squash', 'Cucumbers']
+                    elif n_category == 'High':
+                        n_crops = ['Corn', 'Leafy Greens', 'Cabbage', 'Broccoli']
+                    elif n_category == 'Very High':
+                        n_crops = ['Rice', 'Wheat', 'Sugarcane', 'Cotton']
+                    
+                    for crop in n_crops:
+                        st.markdown(f'<p class="npk-crop-item">• {crop}</p>', unsafe_allow_html=True)
+                    
+                    st.markdown(f'<p class="npk-category {n_category.lower().replace(" ", "-")}-category">Current Level: {n_category}</p>', unsafe_allow_html=True)
+                    st.markdown('</div>', unsafe_allow_html=True)
+                
+                with col_p:
+                    st.markdown(f'<div class="npk-card p-card">', unsafe_allow_html=True)
+                    st.markdown(f'<p class="metric-label">Phosphorus-Loving Crops</p>', unsafe_allow_html=True)
+                    p_category = npk_categories.get('phosphorus', 'Unknown')
+                    p_crops = []
+                    
+                    if p_category == 'Low':
+                        p_crops = ['Carrots', 'Potatoes', 'Garlic', 'Onions']
+                    elif p_category == 'Medium':
+                        p_crops = ['Beets', 'Radishes', 'Turnips', 'Strawberries']
+                    elif p_category == 'High':
+                        p_crops = ['Sunflowers', 'Soybeans', 'Peanuts', 'Flax']
+                    elif p_category == 'Very High':
+                        p_crops = ['Fruit Trees', 'Grapes', 'Berries', 'Melons']
+                    
+                    for crop in p_crops:
+                        st.markdown(f'<p class="npk-crop-item">• {crop}</p>', unsafe_allow_html=True)
+                    
+                    st.markdown(f'<p class="npk-category {p_category.lower().replace(" ", "-")}-category">Current Level: {p_category}</p>', unsafe_allow_html=True)
+                    st.markdown('</div>', unsafe_allow_html=True)
+                
+                with col_k:
+                    st.markdown(f'<div class="npk-card k-card">', unsafe_allow_html=True)
+                    st.markdown(f'<p class="metric-label">Potassium-Loving Crops</p>', unsafe_allow_html=True)
+                    k_category = npk_categories.get('potassium', 'Unknown')
+                    k_crops = []
+                    
+                    if k_category == 'Low':
+                        k_crops = ['Lettuce', 'Spinach', 'Herbs', 'Peas']
+                    elif k_category == 'Medium':
+                        k_crops = ['Beans', 'Eggplant', 'Peppers', 'Cucumbers']
+                    elif k_category == 'High':
+                        k_crops = ['Tomatoes', 'Potatoes', 'Sweet Potatoes', 'Squash']
+                    elif k_category == 'Very High':
+                        k_crops = ['Bananas', 'Citrus Fruits', 'Root Vegetables', 'Avocados']
+                    
+                    for crop in k_crops:
+                        st.markdown(f'<p class="npk-crop-item">• {crop}</p>', unsafe_allow_html=True)
+                    
+                    st.markdown(f'<p class="npk-category {k_category.lower().replace(" ", "-")}-category">Current Level: {k_category}</p>', unsafe_allow_html=True)
+                    st.markdown('</div>', unsafe_allow_html=True)
+                
+                # NPK Balancing Tips
+                st.markdown('<h3 class="sub-header">NPK Balancing Tips</h3>', unsafe_allow_html=True)
+                st.markdown('<div class="card">', unsafe_allow_html=True)
+                
+                # Generate balancing tips based on NPK categories
+                balancing_tips = []
+                
+                # Nitrogen tips
+                if npk_categories.get('nitrogen') == 'Low':
+                    balancing_tips.append("<b>Increase Nitrogen:</b> Add composted manure, blood meal, or plant nitrogen-fixing cover crops like legumes.")
+                elif npk_categories.get('nitrogen') == 'Very High':
+                    balancing_tips.append("<b>Reduce Nitrogen:</b> Plant heavy nitrogen-feeding crops like corn or cabbage. Avoid adding nitrogen-rich fertilizers.")
+                
+                # Phosphorus tips
+                if npk_categories.get('phosphorus') == 'Low':
+                    balancing_tips.append("<b>Increase Phosphorus:</b> Add bone meal, rock phosphate, or fish meal to your soil.")
+                elif npk_categories.get('phosphorus') == 'Very High':
+                    balancing_tips.append("<b>Manage Phosphorus:</b> Avoid phosphorus-rich fertilizers and consider planting phosphorus-hungry crops.")
+                
+                # Potassium tips
+                if npk_categories.get('potassium') == 'Low':
+                    balancing_tips.append("<b>Increase Potassium:</b> Add wood ash, seaweed, or compost rich in banana peels to your soil.")
+                elif npk_categories.get('potassium') == 'Very High':
+                    balancing_tips.append("<b>Manage Potassium:</b> Plant potassium-loving crops like tomatoes and potatoes. Avoid adding potassium-rich amendments.")
+                
+                # Add general tip if all levels are medium
+                if all(cat == 'Medium' for cat in npk_categories.values()):
+                    balancing_tips.append("<b>Maintain Balance:</b> Your NPK levels are well-balanced. Continue with regular composting and crop rotation to maintain soil health.")
+                
+                # Display tips
+                for tip in balancing_tips:
+                    st.markdown(f'<p>{tip}</p>', unsafe_allow_html=True)
+                
+                st.markdown('</div>', unsafe_allow_html=True)
+                st.markdown("<br>", unsafe_allow_html=True)
+            
+            # General Crop Recommendations
+            st.markdown('<h3 class="sub-header">General Crop Recommendations</h3>', unsafe_allow_html=True)
             
             if recommendations and 'crop_recommendations' in recommendations:
                 # Display crop recommendations
@@ -1136,6 +1665,142 @@ def main_dashboard():
     # AI Farmer Intelligence Tab
     with tab6:
         ai_farmer_intelligence_tab()
+    
+    # Help & Info Tab
+    with tab7:
+        st.markdown('<h2 class="sub-header">Help & Information</h2>', unsafe_allow_html=True)
+        
+        # About the Dashboard
+        st.markdown('<h3>About the Dashboard</h3>', unsafe_allow_html=True)
+        st.markdown("""
+        This Soil Health Dashboard provides real-time monitoring and analysis of soil parameters to help farmers make informed decisions about their crops and soil management practices.
+        
+        The dashboard collects data from soil sensors, processes it, and provides insights about soil fertility, NPK levels, crop recommendations, and soil improvement suggestions.
+        """)
+        
+        # How to Use
+        st.markdown('<h3>How to Use</h3>', unsafe_allow_html=True)
+        st.markdown("""
+        1. **Connect to Sensor**: Use the sidebar to connect to your ESP32 soil sensor or use the simulation mode.
+        2. **Collect Data**: Click the 'Collect Data' button to gather soil parameter readings.
+        3. **View Analysis**: Explore the different tabs to see soil health analysis, NPK levels, crop recommendations, and more.
+        4. **Historical Data**: Track your soil health over time in the History tab.
+        5. **AI Analysis**: Use the Mistral AI analysis for deeper insights about your soil health.
+        """)
+        
+        # Soil Parameters Explained
+        st.markdown('<h3>Soil Parameters Explained</h3>', unsafe_allow_html=True)
+        
+        # Create two columns
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown('<h4>Temperature</h4>', unsafe_allow_html=True)
+            st.markdown("""
+            Soil temperature affects seed germination, plant growth, and microbial activity. Most crops prefer soil temperatures between 18°C and 24°C (65°F to 75°F).
+            
+            **Optimal Range**: 18°C - 24°C
+            """)
+            
+            st.markdown('<h4>Moisture</h4>', unsafe_allow_html=True)
+            st.markdown("""
+            Soil moisture is critical for plant growth, nutrient uptake, and overall soil health. Different crops have different moisture requirements.
+            
+            **Optimal Range**: 30% - 60%
+            """)
+            
+            st.markdown('<h4>NPK Levels</h4>', unsafe_allow_html=True)
+            st.markdown("""
+            NPK refers to the three primary nutrients essential for plant growth:
+            
+            **Nitrogen (N)**: Essential for leaf growth and green vegetation. Deficiency causes yellowing of leaves.
+            - **Low**: 0-30 mg/kg
+            - **Medium**: 31-60 mg/kg
+            - **High**: 61-90 mg/kg
+            - **Very High**: >90 mg/kg
+            
+            **Phosphorus (P)**: Important for root development, flowering, and fruiting. Deficiency causes stunted growth.
+            - **Low**: 0-10 mg/kg
+            - **Medium**: 11-20 mg/kg
+            - **High**: 21-30 mg/kg
+            - **Very High**: >30 mg/kg
+            
+            **Potassium (K)**: Helps in overall plant health and disease resistance. Deficiency causes brown edges on leaves.
+            - **Low**: 0-100 mg/kg
+            - **Medium**: 101-200 mg/kg
+            - **High**: 201-300 mg/kg
+            - **Very High**: >300 mg/kg
+            """)
+        
+        with col2:
+            st.markdown('<h4>pH Level</h4>', unsafe_allow_html=True)
+            st.markdown("""
+            Soil pH affects nutrient availability to plants. Most crops prefer slightly acidic to neutral soil (pH 6.0 to 7.0).
+            
+            **Optimal Range**: 6.0 - 7.0
+            """)
+            
+            st.markdown('<h4>Fertility</h4>', unsafe_allow_html=True)
+            st.markdown("""
+            Soil fertility refers to the soil's ability to supply essential nutrients to plants. It's influenced by organic matter content, microbial activity, and nutrient levels.
+            
+            **Categories**:
+            - Poor: Low nutrient availability
+            - Fair: Moderate nutrient availability
+            - Good: Adequate nutrient availability
+            - Excellent: High nutrient availability
+            """)
+            
+            st.markdown('<h4>NPK Health Percentage</h4>', unsafe_allow_html=True)
+            st.markdown("""
+            The NPK health percentage indicates how optimal your soil's NPK levels are for general plant growth:
+            
+            - **90-100%**: Excellent - Optimal levels for most plants
+            - **70-89%**: Good - Suitable for most plants
+            - **50-69%**: Fair - May need some amendments
+            - **Below 50%**: Poor - Requires significant amendments
+            
+            Different plants have different NPK requirements, so check the NPK-specific recommendations for your intended crops.
+            """)
+        
+        # Understanding NPK Analysis
+        st.markdown('<h3>Understanding NPK Analysis</h3>', unsafe_allow_html=True)
+        st.markdown("""
+        The NPK Analysis section provides detailed information about your soil's macronutrient levels:
+        
+        1. **NPK Values**: The actual measured values of Nitrogen, Phosphorus, and Potassium in your soil.
+        
+        2. **Categories**: Each nutrient is categorized as Low, Medium, High, or Very High based on standard agricultural ranges.
+        
+        3. **Health Percentages**: Indicates how close each nutrient is to its optimal range for general plant growth.
+        
+        4. **Recommendations**: Specific suggestions for managing each nutrient level, whether it needs to be increased, decreased, or maintained.
+        
+        5. **NPK-Specific Crop Recommendations**: Suggestions for crops that would thrive with your current NPK levels.
+        
+        Remember that different plants have different nutrient requirements. Use the NPK-specific recommendations in the Recommendations tab to choose crops that match your soil's nutrient profile.
+        """)
+        
+        # Troubleshooting
+        st.markdown('<h3>Troubleshooting</h3>', unsafe_allow_html=True)
+        st.markdown("""
+        **Sensor Connection Issues**:
+        - Ensure your ESP32 is properly powered and connected.
+        - Check that the correct COM port is selected.
+        - Try disconnecting and reconnecting the device.
+        
+        **Data Collection Problems**:
+        - Verify that the sensors are properly inserted into the soil.
+        - Ensure the soil is not too dry or too wet for accurate readings.
+        - Try collecting data from different spots in your field.
+        
+        **NPK Reading Issues**:
+        - Make sure the NPK sensor probes are clean and free from debris.
+        - Calibrate your NPK sensor according to manufacturer instructions if readings seem inaccurate.
+        - Take multiple readings from different soil depths for more accurate results.
+        
+        **For additional help, contact support at: support@soilhealth.com**
+        """)
 
 # Perform standard Mistral AI analysis
 def perform_standard_analysis(soil_data, fertility_prediction, recommendations=None):
