@@ -252,6 +252,29 @@ def load_crop_data():
         return pd.DataFrame()
 
 # Initialize session state
+# Connection monitoring thread function
+def connection_monitor_thread(esp32_interface):
+    while not st.session_state.get('stop_connection_thread', False):
+        try:
+            # Check if the connection is still active
+            if not st.session_state.connected or not esp32_interface:
+                break
+                
+            # Try to read data to verify connection
+            test_data = esp32_interface.read_data()
+            if not test_data:
+                print("Connection monitor: No data received, connection may be lost")
+                # If no data, try to reconnect
+                esp32_interface.connect()
+            else:
+                print("Connection monitor: Connection is active")
+                
+            # Sleep for a while before checking again
+            time.sleep(5)
+        except Exception as e:
+            print(f"Connection monitor error: {e}")
+            time.sleep(5)
+
 def init_session_state():
     if 'connected' not in st.session_state:
         st.session_state.connected = False
@@ -269,7 +292,7 @@ def init_session_state():
     if 'mistral_analyzer' not in st.session_state:
         st.session_state.mistral_analyzer = MistralSoilAnalysis(api_key="yQdfM8MLbX9uhInQ7id4iUTwN4h4pDLX")
     if 'current_data' not in st.session_state:
-        st.session_state.current_data = None
+        st.session_state.current_data = {}
     if 'fertility_prediction' not in st.session_state:
         st.session_state.fertility_prediction = None
     if 'history_data' not in st.session_state:
@@ -280,7 +303,8 @@ def init_session_state():
             'moisture': deque(maxlen=50),
             'nitrogen': deque(maxlen=50),
             'phosphorus': deque(maxlen=50),
-            'potassium': deque(maxlen=50)
+            'potassium': deque(maxlen=50),
+            'ph': deque(maxlen=50)
         }
     if 'timestamps' not in st.session_state:
         st.session_state.timestamps = deque(maxlen=50)
@@ -292,6 +316,10 @@ def init_session_state():
         st.session_state.simulation_thread = None
     if 'stop_simulation' not in st.session_state:
         st.session_state.stop_simulation = False
+    if 'connection_thread' not in st.session_state:
+        st.session_state.connection_thread = None
+    if 'stop_connection_thread' not in st.session_state:
+        st.session_state.stop_connection_thread = False
     if 'llm_analysis' not in st.session_state:
         st.session_state.llm_analysis = None
     if 'is_analyzing' not in st.session_state:
@@ -380,6 +408,16 @@ def connect_to_esp32(port=None, ip_address=None, connection_type="serial"):
                     else:
                         st.warning("Connected but couldn't read data. Will keep trying in background.")
                     
+                    # Start connection monitoring thread
+                    st.session_state.stop_connection_thread = False
+                    st.session_state.connection_thread = threading.Thread(
+                        target=connection_monitor_thread,
+                        args=(st.session_state.esp32_interface,),
+                        daemon=True
+                    )
+                    st.session_state.connection_thread.start()
+                    st.info("Connection monitoring started to maintain stable connection.")
+                    
                     # Start data collection thread
                     st.info("Starting data collection thread...")
                     threading.Thread(target=collect_data, daemon=True).start()
@@ -415,10 +453,17 @@ def connect_to_esp32(port=None, ip_address=None, connection_type="serial"):
 
 # Disconnect from ESP32
 def disconnect_esp32():
-    if st.session_state.esp32_interface:
-        st.session_state.esp32_interface.close()
-        st.session_state.connected = False
-        st.session_state.esp32_interface = None
+    # Stop the connection monitoring thread if it exists
+    if 'connection_thread' in st.session_state and st.session_state.connection_thread:
+        st.session_state.stop_connection_thread = True
+        # No need to join the thread as it's a daemon thread
+        st.session_state.connection_thread = None
+    
+    # Close the ESP32 interface
+     if st.session_state.esp32_interface:
+         st.session_state.esp32_interface.close()
+         st.session_state.connected = False
+         st.session_state.esp32_interface = None
         st.info("Disconnected from ESP32")
 
 # Generate simulated data
@@ -445,9 +490,15 @@ def simulation_thread_func():
     
     # Continue generating data at intervals
     while not st.session_state.get('stop_simulation', False):
-        data = generate_simulated_data()
-        process_data(data)
-        time.sleep(2)
+        try:
+            data = generate_simulated_data()
+            process_data(data)
+            # Add a small delay to prevent excessive CPU usage
+            time.sleep(2)
+        except Exception as e:
+            print(f"Error in simulation thread: {e}")
+            # Don't let the thread die on error
+            time.sleep(2)
 
 # Start simulation
 def start_simulation():
@@ -514,15 +565,29 @@ def collect_data():
                 consecutive_failures += 1
                 print(f"⚠️ No data received from ESP32. Attempt {consecutive_failures}/{max_failures}")
                 
+                # If we have no data but simulation mode is on, generate simulated data
+                if st.session_state.simulation_mode:
+                    print("📊 Generating simulated data since real data is unavailable")
+                    simulated_data = generate_simulated_data()
+                    process_data(simulated_data)
+                
                 # Show warning in UI after several failed attempts
                 if consecutive_failures >= max_failures:
                     with st.sidebar:
                         st.warning("Having trouble getting data from ESP32. Check connection settings.")
-                        
+                    
                     # Try to force reconnect after multiple failures
                     if consecutive_failures >= max_failures * 2:
                         print("🔄 Attempting to reconnect to ESP32...")
-                        st.session_state.esp32_interface.connect()
+                        try:
+                            st.session_state.esp32_interface.connect()
+                        except Exception as reconnect_error:
+                            print(f"❌ Reconnection failed: {reconnect_error}")
+                            # If reconnection fails, start simulation if not already running
+                            if not st.session_state.simulation_mode:
+                                print("🔄 Starting simulation mode due to connection issues")
+                                st.session_state.simulation_mode = True
+                                start_simulation()
         except Exception as e:
             consecutive_failures += 1
             print(f"❌ Error reading data: {e}")
@@ -531,6 +596,12 @@ def collect_data():
             if consecutive_failures >= max_failures:
                 with st.sidebar:
                     st.error(f"Error reading data from ESP32: {str(e)}")
+                
+                # If we have persistent errors and no simulation, start simulation
+                if consecutive_failures >= max_failures * 2 and not st.session_state.simulation_mode:
+                    print("🔄 Starting simulation mode due to persistent errors")
+                    st.session_state.simulation_mode = True
+                    start_simulation()
         
         # Adaptive sleep time - increase delay after failures to avoid hammering the device
         sleep_time = min(2 + (consecutive_failures * 0.5), 10)  # Max 10 seconds
@@ -684,11 +755,12 @@ def process_data(data):
     if 'simulated' in data:
         processed_data['simulated'] = data['simulated']
     
+    # Initialize current_data if it doesn't exist
+    if 'current_data' not in st.session_state or st.session_state.current_data is None:
+        st.session_state.current_data = {}
+        
     # Update the current data with processed data
-    if not st.session_state.current_data:
-        st.session_state.current_data = processed_data
-    else:
-        st.session_state.current_data.update(processed_data)
+    st.session_state.current_data.update(processed_data)
     
     # Store timestamp
     st.session_state.timestamps.append(timestamp)
@@ -1203,11 +1275,31 @@ def main_dashboard():
         # Current readings section
         st.markdown('<h2 class="sub-header">Current Soil Readings</h2>', unsafe_allow_html=True)
         
-        if st.session_state.current_data:
+        # Initialize current_data if it doesn't exist
+        if 'current_data' not in st.session_state or st.session_state.current_data is None:
+            st.session_state.current_data = {}
+            
+        # Check if we have data to display
+        if st.session_state.current_data and all(key in st.session_state.current_data for key in ['temperature', 'moisture', 'ph', 'nitrogen', 'phosphorus', 'potassium']):
             data = st.session_state.current_data
+        else:
+            # Display a message when no data is available
+            st.info("No sensor data available yet. Please connect to an ESP32 device or start the simulation to see readings.")
+            
+            # Add buttons for quick actions
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("Start Simulation"):
+                    start_simulation()
+            with col2:
+                if st.button("Connect to ESP32"):
+                    st.info("Please use the connection options in the sidebar to connect to your ESP32 device.")
+            
+            # Return early as we don't have data to display
+            return
             
             # Display current readings in cards
-            col1, col2, col3, col4, col5 = st.columns(5)
+            col1, col2, col3 = st.columns(3)
             
             with col1:
                 st.markdown('<div class="card">', unsafe_allow_html=True)
@@ -1223,17 +1315,25 @@ def main_dashboard():
             
             with col3:
                 st.markdown('<div class="card">', unsafe_allow_html=True)
+                st.markdown('<p class="metric-label">pH</p>', unsafe_allow_html=True)
+                st.markdown(f'<p class="metric-value">{data["ph"]:.1f}</p>', unsafe_allow_html=True)
+                st.markdown('</div>', unsafe_allow_html=True)
+            
+            col4, col5, col6 = st.columns(3)
+            
+            with col4:
+                st.markdown('<div class="card">', unsafe_allow_html=True)
                 st.markdown('<p class="metric-label">Nitrogen</p>', unsafe_allow_html=True)
                 st.markdown(f'<p class="metric-value">{data["nitrogen"]:.1f} mg/kg</p>', unsafe_allow_html=True)
                 st.markdown('</div>', unsafe_allow_html=True)
             
-            with col4:
+            with col5:
                 st.markdown('<div class="card">', unsafe_allow_html=True)
                 st.markdown('<p class="metric-label">Phosphorus</p>', unsafe_allow_html=True)
                 st.markdown(f'<p class="metric-value">{data["phosphorus"]:.1f} mg/kg</p>', unsafe_allow_html=True)
                 st.markdown('</div>', unsafe_allow_html=True)
             
-            with col5:
+            with col6:
                 st.markdown('<div class="card">', unsafe_allow_html=True)
                 st.markdown('<p class="metric-label">Potassium</p>', unsafe_allow_html=True)
                 st.markdown(f'<p class="metric-value">{data["potassium"]:.1f} mg/kg</p>', unsafe_allow_html=True)
