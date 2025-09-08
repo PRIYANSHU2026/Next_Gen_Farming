@@ -14,6 +14,28 @@ import plotly.graph_objects as go
 import plotly.express as px
 from PIL import Image
 
+# Initialize session state variables
+if "connected" not in st.session_state:
+    st.session_state.connected = False
+    
+if "esp32_interface" not in st.session_state:
+    st.session_state.esp32_interface = None
+    
+if "current_data" not in st.session_state:
+    st.session_state.current_data = {}
+    
+if "simulation_mode" not in st.session_state:
+    st.session_state.simulation_mode = False
+    
+if "stop_simulation" not in st.session_state:
+    st.session_state.stop_simulation = False
+    
+if "simulation_thread" not in st.session_state:
+    st.session_state.simulation_thread = None
+    
+if "connection_type" not in st.session_state:
+    st.session_state.connection_type = "serial"
+
 # Import our custom modules
 import sys
 sys.path.append('.')
@@ -403,11 +425,16 @@ def disconnect_esp32():
 def generate_simulated_data():
     return {
         'temperature': np.random.uniform(20, 30),
+        'temperature_dht': np.random.uniform(20, 30),
+        'temperature_ds18b20': np.random.uniform(20, 30),
+        'humidity': np.random.uniform(40, 80),
         'moisture': np.random.uniform(40, 80),
         'nitrogen': np.random.uniform(100, 200),
         'phosphorus': np.random.uniform(10, 30),
         'potassium': np.random.uniform(200, 400),
-        'ph': np.random.uniform(5.5, 7.5)
+        'ph': np.random.uniform(5.5, 7.5),
+        'timestamp': datetime.now().isoformat(),
+        'simulated': True
     }
 
 # Simulation thread function
@@ -433,14 +460,15 @@ def start_simulation():
             'moisture': deque(maxlen=50),
             'nitrogen': deque(maxlen=50),
             'phosphorus': deque(maxlen=50),
-            'potassium': deque(maxlen=50)
+            'potassium': deque(maxlen=50),
+            'ph': deque(maxlen=50)
         }
     
     st.session_state.simulation_mode = True
     st.session_state.stop_simulation = False
     st.session_state.simulation_thread = threading.Thread(target=simulation_thread_func, daemon=True)
     st.session_state.simulation_thread.start()
-    st.success("Simulation started!")
+    st.success("Simulation started! The dashboard will now display simulated soil sensor data.")
     
     # Force dashboard to update
     st.rerun()
@@ -618,7 +646,8 @@ def process_data(data):
             'moisture': deque(maxlen=50),
             'nitrogen': deque(maxlen=50),
             'phosphorus': deque(maxlen=50),
-            'potassium': deque(maxlen=50)
+            'potassium': deque(maxlen=50),
+            'ph': deque(maxlen=50)
         }
     
     # Map ESP32 data fields to expected dashboard fields
