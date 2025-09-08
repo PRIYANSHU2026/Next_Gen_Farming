@@ -362,6 +362,9 @@ def connect_to_esp32(port=None, ip_address=None, connection_type="serial"):
                     st.info("Starting data collection thread...")
                     threading.Thread(target=collect_data, daemon=True).start()
                     
+                    # Force dashboard to update
+                    st.experimental_rerun()
+                    
                     return True
                 else:
                     st.error(f"Failed to connect to ESP32 Web Server at {ip_address}.")
@@ -409,6 +412,11 @@ def generate_simulated_data():
 
 # Simulation thread function
 def simulation_thread_func():
+    # Generate initial data immediately
+    data = generate_simulated_data()
+    process_data(data)
+    
+    # Continue generating data at intervals
     while not st.session_state.get('stop_simulation', False):
         data = generate_simulated_data()
         process_data(data)
@@ -433,6 +441,9 @@ def start_simulation():
     st.session_state.simulation_thread = threading.Thread(target=simulation_thread_func, daemon=True)
     st.session_state.simulation_thread.start()
     st.success("Simulation started!")
+    
+    # Force dashboard to update
+    st.experimental_rerun()
 
 # Stop simulation
 def stop_simulation():
@@ -610,22 +621,64 @@ def process_data(data):
             'potassium': deque(maxlen=50)
         }
     
+    # Map ESP32 data fields to expected dashboard fields
+    processed_data = {}
+    
+    # Handle temperature (could be from DHT or DS18B20 sensor)
+    if 'temperature_dht' in data:
+        processed_data['temperature'] = data['temperature_dht']
+    elif 'temperature_ds18b20' in data:
+        processed_data['temperature'] = data['temperature_ds18b20']
+    elif 'temperature' in data:
+        processed_data['temperature'] = data['temperature']
+    
+    # Handle other fields
+    if 'humidity' in data:
+        processed_data['humidity'] = data['humidity']
+    
+    if 'moisture' in data:
+        processed_data['moisture'] = data['moisture']
+    
+    if 'ph' in data:
+        processed_data['ph'] = data['ph']
+    
+    if 'nitrogen' in data:
+        processed_data['nitrogen'] = data['nitrogen']
+    
+    if 'phosphorus' in data:
+        processed_data['phosphorus'] = data['phosphorus']
+    
+    if 'potassium' in data:
+        processed_data['potassium'] = data['potassium']
+    
+    # Check if data is simulated
+    if 'simulated' in data:
+        processed_data['simulated'] = data['simulated']
+    
+    # Update the current data with processed data
+    if not st.session_state.current_data:
+        st.session_state.current_data = processed_data
+    else:
+        st.session_state.current_data.update(processed_data)
+    
+    # Store timestamp
     st.session_state.timestamps.append(timestamp)
+    
+    # Update sensor data for trends
     for key in st.session_state.sensor_data.keys():
-        if key in data:
-            st.session_state.sensor_data[key].append(data[key])
+        if key in processed_data:
+            st.session_state.sensor_data[key].append(processed_data[key])
     
     # Make fertility prediction with NPK analysis
-    fertility_prediction = predict_fertility(data)
+    fertility_prediction = predict_fertility(processed_data)
     
-    # Store current data and prediction
-    st.session_state.current_data = data
+    # Store prediction
     st.session_state.fertility_prediction = fertility_prediction
     
     # Add to history with NPK categories
     history_entry = {
         'timestamp': timestamp,
-        **data,
+        **processed_data,
         'fertility_class': fertility_prediction['fertility_label'],
         'n_category': fertility_prediction.get('n_category', 'Unknown'),
         'p_category': fertility_prediction.get('p_category', 'Unknown'),
