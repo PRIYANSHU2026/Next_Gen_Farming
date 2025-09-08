@@ -289,9 +289,15 @@ def get_crop_recommendations(data):
         # Calculate score based on how close soil parameters are to crop's optimal range
         temp_score = 100 - min(100, abs(soil_params["temperature"] - (crop["temperature_min"] + crop["temperature_max"]) / 2) * 5)
         ph_score = 100 - min(100, abs(soil_params["ph"] - (crop["ph_min"] + crop["ph_max"]) / 2) * 20)
-        n_score = 100 - min(100, abs(soil_params["nitrogen"] - crop["n"]) / crop["n"] * 100)
-        p_score = 100 - min(100, abs(soil_params["phosphorus"] - crop["p"]) / crop["p"] * 100)
-        k_score = 100 - min(100, abs(soil_params["potassium"] - crop["k"]) / crop["k"] * 100)
+        
+        # Use min/max values from CSV instead of direct n, p, k columns
+        n_avg = (crop["n_min"] + crop["n_max"]) / 2
+        p_avg = (crop["p_min"] + crop["p_max"]) / 2
+        k_avg = (crop["k_min"] + crop["k_max"]) / 2
+        
+        n_score = 100 - min(100, abs(soil_params["nitrogen"] - n_avg) / n_avg * 100)
+        p_score = 100 - min(100, abs(soil_params["phosphorus"] - p_avg) / p_avg * 100)
+        k_score = 100 - min(100, abs(soil_params["potassium"] - k_avg) / k_avg * 100)
         
         # Calculate overall score (weighted average)
         overall_score = (temp_score * 0.2 + ph_score * 0.2 + n_score * 0.2 + p_score * 0.2 + k_score * 0.2)
@@ -569,10 +575,20 @@ elif st.session_state.active_tab == "analytics":
         st.subheader("Temperature and Moisture Over Time")
         fig = make_subplots(specs=[[{"secondary_y": True}]])
         
+        # Ensure temperature column exists, use temperature_ds18b20 as fallback
+        if 'temperature' in df.columns:
+            temp_col = 'temperature'
+        elif 'temperature_ds18b20' in df.columns:
+            temp_col = 'temperature_ds18b20'
+        else:
+            # Create a default temperature column if neither exists
+            df['temperature'] = 25.0
+            temp_col = 'temperature'
+            
         fig.add_trace(
             go.Scatter(
                 x=df['timestamp'],
-                y=df['temperature'],
+                y=df[temp_col],
                 name="Temperature (°C)",
                 line=dict(color='#FF4B4B', width=2)
             ),
@@ -1144,7 +1160,7 @@ elif st.session_state.active_tab == "chatbot":
             st.success("✅ Data refreshed successfully!")
             st.rerun()
         else:
-            st.error(f"❌ Could not fetch data. Error: {error}")
+            st.error(f"❌ Could not fetch data. Please check your connection settings.")
 else:
     if st.session_state.connected:
         st.info("⏳ Waiting for data from ESP32...")
