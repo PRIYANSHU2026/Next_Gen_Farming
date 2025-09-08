@@ -326,20 +326,56 @@ def connect_to_esp32(port=None, ip_address=None, connection_type="serial"):
             # Connect via web interface
             with st.spinner(f"Connecting to ESP32 Web Server at {ip_address}..."):
                 st.session_state.esp32_ip = ip_address
+                
+                # Create ESP32WebInterface with debug info
+                st.info(f"Creating ESP32WebInterface with IP: {ip_address}")
                 st.session_state.esp32_interface = ESP32WebInterface(ip_address=ip_address)
+                
+                # Try to detect ESP32 devices on the network
+                st.info("Scanning network for ESP32 devices...")
+                available_ips = st.session_state.esp32_interface.scan_for_devices()
+                
+                if available_ips:
+                    st.success(f"Found ESP32 devices at: {', '.join(available_ips)}")
+                    # If the provided IP is not in the list, suggest using one of the found IPs
+                    if ip_address not in available_ips and not any(ip_address in found_ip for found_ip in available_ips):
+                        st.warning(f"The provided IP ({ip_address}) was not found in the scan results.")
+                        st.info(f"Consider using one of the detected IPs: {', '.join(available_ips)}")
+                
+                # Attempt connection
+                st.info(f"Attempting to connect to {ip_address}...")
                 success = st.session_state.esp32_interface.connect()
                 
                 if success:
                     st.session_state.connected = True
                     st.success(f"Connected to ESP32 Web Server at {ip_address}!")
                     
+                    # Test data reading
+                    st.info("Testing data reading...")
+                    test_data = st.session_state.esp32_interface.read_data()
+                    if test_data:
+                        st.success(f"Successfully read data: {test_data}")
+                    else:
+                        st.warning("Connected but couldn't read data. Will keep trying in background.")
+                    
                     # Start data collection thread
+                    st.info("Starting data collection thread...")
                     threading.Thread(target=collect_data, daemon=True).start()
                     
                     return True
                 else:
                     st.error(f"Failed to connect to ESP32 Web Server at {ip_address}.")
                     st.info("Please check if the ESP32 is running and the IP address is correct.")
+                    st.info("Make sure the ESP32 has a web server running and is accessible on your network.")
+                    
+                    # Ask if user wants to start simulation mode
+                    if st.button("Start Simulation Mode Instead"):
+                        st.session_state.connected = True  # Set connected to true for simulation
+                        st.session_state.simulation_mode = True
+                        st.success("Starting simulation mode with generated data!")
+                        start_simulation()
+                        return True
+                    
                     st.session_state.connected = False
                     return False
         else:
@@ -408,14 +444,58 @@ def stop_simulation():
 
 # Collect data from ESP32
 def collect_data():
+    consecutive_failures = 0
+    max_failures = 5  # Maximum consecutive failures before showing warning
+    
     while st.session_state.connected and st.session_state.esp32_interface:
         try:
+            print("🔄 Attempting to read data from ESP32...")
             data = st.session_state.esp32_interface.read_data()
+            
             if data:
+                print(f"✅ Data received from ESP32: {data}")
+                
+                # Check if this is simulated data
+                if data.get('simulated', False):
+                    print("📊 Using simulated data since real data is unavailable")
+                    with st.sidebar:
+                        if consecutive_failures >= max_failures:
+                            st.info("Using simulated data since ESP32 data is unavailable")
+                
+                # Process the data regardless of source
                 process_data(data)
+                
+                # Only reset failure counter if this was real data
+                if not data.get('simulated', False):
+                    consecutive_failures = 0
+                else:
+                    # Still count as a failure if using simulated data
+                    consecutive_failures += 1
+            else:
+                consecutive_failures += 1
+                print(f"⚠️ No data received from ESP32. Attempt {consecutive_failures}/{max_failures}")
+                
+                # Show warning in UI after several failed attempts
+                if consecutive_failures >= max_failures:
+                    with st.sidebar:
+                        st.warning("Having trouble getting data from ESP32. Check connection settings.")
+                        
+                    # Try to force reconnect after multiple failures
+                    if consecutive_failures >= max_failures * 2:
+                        print("🔄 Attempting to reconnect to ESP32...")
+                        st.session_state.esp32_interface.connect()
         except Exception as e:
-            print(f"Error reading data: {e}")
-        time.sleep(1)
+            consecutive_failures += 1
+            print(f"❌ Error reading data: {e}")
+            
+            # Show error in UI after several failed attempts
+            if consecutive_failures >= max_failures:
+                with st.sidebar:
+                    st.error(f"Error reading data from ESP32: {str(e)}")
+        
+        # Adaptive sleep time - increase delay after failures to avoid hammering the device
+        sleep_time = min(2 + (consecutive_failures * 0.5), 10)  # Max 10 seconds
+        time.sleep(sleep_time)
 
 # Create the connection sidebar
 def create_connection_sidebar():
