@@ -363,7 +363,7 @@ def connect_to_esp32(port=None, ip_address=None, connection_type="serial"):
                     threading.Thread(target=collect_data, daemon=True).start()
                     
                     # Force dashboard to update
-                    st.experimental_rerun()
+                    st.rerun()
                     
                     return True
                 else:
@@ -443,7 +443,7 @@ def start_simulation():
     st.success("Simulation started!")
     
     # Force dashboard to update
-    st.experimental_rerun()
+    st.rerun()
 
 # Stop simulation
 def stop_simulation():

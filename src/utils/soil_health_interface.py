@@ -8,8 +8,6 @@ import numpy as np
 import threading
 import os
 import requests
-import math
-import random
 from datetime import datetime
 
 class SoilHealthPredictor:
