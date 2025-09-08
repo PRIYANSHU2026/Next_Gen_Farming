@@ -17,7 +17,7 @@ from PIL import Image
 # Import our custom modules
 import sys
 sys.path.append('.')
-from utils.soil_health_interface import SoilHealthPredictor, ESP32Interface
+from utils.soil_health_interface import SoilHealthPredictor, ESP32Interface, ESP32WebInterface
 from models.plant_recommendation import PlantRecommendationSystem
 from api.mistral_soil_analysis import MistralSoilAnalysis
 
@@ -235,11 +235,14 @@ def init_session_state():
         st.session_state.connected = False
     if 'esp32_interface' not in st.session_state:
         st.session_state.esp32_interface = None
+    if 'connection_type' not in st.session_state:
+        st.session_state.connection_type = "serial"  # Options: "serial", "web"
+    if 'esp32_ip' not in st.session_state:
+        st.session_state.esp32_ip = "http://localhost"  # Default IP address
     if 'soil_predictor' not in st.session_state:
         st.session_state.soil_predictor = SoilHealthPredictor()
     if 'plant_recommender' not in st.session_state:
-        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        crop_recommendations_path = os.path.join(project_root, "crop_recommendations.csv")
+        crop_recommendations_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "crop_recommendations.csv")
         st.session_state.plant_recommender = PlantRecommendationSystem(crop_data_path=crop_recommendations_path)
     if 'mistral_analyzer' not in st.session_state:
         st.session_state.mistral_analyzer = MistralSoilAnalysis(api_key="yQdfM8MLbX9uhInQ7id4iUTwN4h4pDLX")
@@ -284,37 +287,65 @@ def init_session_state():
         st.session_state.farmer_assistant = None
 
 # Connect to ESP32
-def connect_to_esp32(port=None):
+def connect_to_esp32(port=None, ip_address=None, connection_type="serial"):
     try:
-        # Display connecting message
-        with st.spinner(f"Connecting to ESP32{' on port ' + port if port else ''}..."):
-            st.session_state.esp32_interface = ESP32Interface(port=port)
-            success = st.session_state.esp32_interface.connect()
-            
-            if success:
-                st.session_state.connected = True
-                st.success(f"Connected to ESP32 successfully on port {st.session_state.esp32_interface.port}!")
+        # Set connection type
+        st.session_state.connection_type = connection_type
+        
+        if connection_type == "serial":
+            # Connect via serial port
+            with st.spinner(f"Connecting to ESP32{' on port ' + port if port else ''}..."):
+                st.session_state.esp32_interface = ESP32Interface(port=port)
+                success = st.session_state.esp32_interface.connect()
                 
-                # Start data collection thread
-                threading.Thread(target=collect_data, daemon=True).start()
-                
-                # Automatically start simulation when connected to ESP32
-                if not st.session_state.get('simulation_mode', False):
-                    start_simulation()
-                    st.info("Simulation automatically started with real ESP32 data!")
-                
-                return True
-            else:
-                # Provide more specific error messages
-                if port:
-                    st.error(f"Failed to connect to ESP32 on port {port}. Please check if the device is connected and the firmware is running.")
-                    st.info("Make sure the ESP32 is properly connected and the correct firmware is uploaded.")
+                if success:
+                    st.session_state.connected = True
+                    st.success(f"Connected to ESP32 successfully on port {st.session_state.esp32_interface.port}!")
+                    
+                    # Start data collection thread
+                    threading.Thread(target=collect_data, daemon=True).start()
+                    
+                    # Automatically start simulation when connected to ESP32
+                    if not st.session_state.get('simulation_mode', False):
+                        start_simulation()
+                        st.info("Simulation automatically started with real ESP32 data!")
+                    
+                    return True
                 else:
-                    st.error("ESP32 not found on any available port.")
-                    st.info("Please check if the ESP32 is connected to your computer and the firmware is running. You can also try selecting a specific port from the dropdown.")
+                    # Provide more specific error messages
+                    if port:
+                        st.error(f"Failed to connect to ESP32 on port {port}. Please check if the device is connected and the firmware is running.")
+                        st.info("Make sure the ESP32 is properly connected and the correct firmware is uploaded.")
+                    else:
+                        st.error("ESP32 not found on any available port.")
+                        st.info("Please check if the ESP32 is connected to your computer and the firmware is running. You can also try selecting a specific port from the dropdown.")
+                    
+                    st.session_state.connected = False
+                    return False
+        elif connection_type == "web":
+            # Connect via web interface
+            with st.spinner(f"Connecting to ESP32 Web Server at {ip_address}..."):
+                st.session_state.esp32_ip = ip_address
+                st.session_state.esp32_interface = ESP32WebInterface(ip_address=ip_address)
+                success = st.session_state.esp32_interface.connect()
                 
-                st.session_state.connected = False
-                return False
+                if success:
+                    st.session_state.connected = True
+                    st.success(f"Connected to ESP32 Web Server at {ip_address}!")
+                    
+                    # Start data collection thread
+                    threading.Thread(target=collect_data, daemon=True).start()
+                    
+                    return True
+                else:
+                    st.error(f"Failed to connect to ESP32 Web Server at {ip_address}.")
+                    st.info("Please check if the ESP32 is running and the IP address is correct.")
+                    st.session_state.connected = False
+                    return False
+        else:
+            st.error(f"Invalid connection type: {connection_type}")
+            st.session_state.connected = False
+            return False
     except Exception as e:
         st.error(f"Failed to connect to ESP32: {e}")
         st.info("If you don't have an ESP32 connected, you can use the simulation mode to test the application.")
@@ -385,6 +416,102 @@ def collect_data():
         except Exception as e:
             print(f"Error reading data: {e}")
         time.sleep(1)
+
+# Create the connection sidebar
+def create_connection_sidebar():
+    with st.sidebar:
+        st.header("📡 ESP32 Connection")
+        
+        # Connection type selection
+        connection_type = st.radio(
+            "Connection Type",
+            options=["Serial", "Web"],
+            index=0 if st.session_state.connection_type == "serial" else 1,
+            key="connection_type_radio"
+        )
+        
+        if connection_type == "Serial":
+            # Serial connection options
+            st.session_state.connection_type = "serial"
+            
+            # Get available ports
+            import serial.tools.list_ports
+            ports = [port.device for port in serial.tools.list_ports.comports()]
+            
+            if ports:
+                selected_port = st.selectbox("Select Serial Port", options=ports)
+                connect_button = st.button("Connect via Serial")
+                
+                if connect_button:
+                    connect_to_esp32(port=selected_port, connection_type="serial")
+            else:
+                st.warning("No serial ports found. Please connect your ESP32 device.")
+        
+        else:  # Web connection
+            # Web connection options
+            st.session_state.connection_type = "web"
+            
+            # Initialize ESP32WebInterface for scanning if not already done
+            if "esp32_web_scanner" not in st.session_state:
+                st.session_state.esp32_web_scanner = ESP32WebInterface()
+                
+            # Scan button for automatic IP detection
+            col1, col2 = st.columns([1, 1])
+            with col1:
+                scan_button = st.button("🔍 Scan for Devices")
+            
+            # Display scanning status
+            if scan_button:
+                with st.spinner("Scanning network for ESP32 devices..."):
+                    available_ips = st.session_state.esp32_web_scanner.scan_for_devices()
+                    if available_ips:
+                        st.session_state.available_esp32_ips = available_ips
+                        st.success(f"Found {len(available_ips)} ESP32 device(s)!")
+                    else:
+                        st.warning("No ESP32 devices found on the network.")
+                        if "available_esp32_ips" not in st.session_state:
+                            st.session_state.available_esp32_ips = []
+            
+            # Show detected devices if any
+            if "available_esp32_ips" in st.session_state and st.session_state.available_esp32_ips:
+                st.subheader("Detected Devices")
+                selected_device = st.selectbox(
+                    "Select ESP32 Device",
+                    options=st.session_state.available_esp32_ips,
+                    format_func=lambda x: f"ESP32 at {x}"
+                )
+                
+                # Set the selected device as the IP address
+                if selected_device:
+                    st.session_state.esp32_ip = selected_device
+            
+            # Manual IP address input
+            st.subheader("Manual Connection")
+            ip_address = st.text_input(
+                "ESP32 IP Address",
+                value=st.session_state.esp32_ip if "esp32_ip" in st.session_state else "http://localhost",
+                help="Enter the IP address of your ESP32 web server (e.g., http://192.168.1.100)"
+            )
+            
+            connect_button = st.button("Connect via Web")
+            
+            if connect_button:
+                connect_to_esp32(ip_address=ip_address, connection_type="web")
+        
+        # Disconnect button (only show if connected)
+        if st.session_state.connected:
+            if st.button("Disconnect"):
+                disconnect_esp32()
+        
+        # Simulation controls
+        st.header("🔄 Simulation")
+        
+        if not st.session_state.simulation_mode:
+            if st.button("Start Simulation"):
+                start_simulation()
+        else:
+            if st.button("Stop Simulation"):
+                stop_simulation()
 
 # Process received data
 def process_data(data):
@@ -903,42 +1030,8 @@ def main_dashboard():
     # Header with logo
     st.markdown('<h1 class="main-header">🌱 Smart Soil Health Dashboard</h1>', unsafe_allow_html=True)
     
-    # Connection controls with improved UI
-    st.markdown('<div style="background-color: #f1f8ff; padding: 15px; border-radius: 10px; margin-bottom: 20px;">', unsafe_allow_html=True)
-    col1, col2, col3 = st.columns([1, 1, 1])
-    
-    with col1:
-        if not st.session_state.connected and not st.session_state.simulation_mode:
-            # Get available serial ports
-            ports = [port.device for port in serial.tools.list_ports.comports()]
-            selected_port = st.selectbox("📱 Select ESP32 Port", options=ports, index=0 if ports else None)
-            
-            # Connect button with selected port and custom styling
-            if st.button("🔌 Connect to ESP32", key="connect_btn", type="primary"):
-                connect_to_esp32(port=selected_port)
-        elif st.session_state.connected:
-            if st.button("❌ Disconnect ESP32", on_click=disconnect_esp32, key="disconnect_btn", type="secondary"):
-                pass
-            if st.session_state.esp32_interface and st.session_state.esp32_interface.port:
-                st.markdown(f"<div class='status-indicator' style='background-color: #e8f8f5;'><div class='status-dot connected-dot'></div>Connected on: {st.session_state.esp32_interface.port}</div>", unsafe_allow_html=True)
-    
-    with col2:
-        if not st.session_state.connected and not st.session_state.simulation_mode:
-            if st.button("▶️ Start Simulation", on_click=start_simulation, key="start_sim_btn", type="primary"):
-                pass
-        elif st.session_state.simulation_mode:
-            if st.button("⏹️ Stop Simulation", on_click=stop_simulation, key="stop_sim_btn", type="secondary"):
-                pass
-    
-    with col3:
-        if st.session_state.connected:
-            st.markdown("<div class='status-indicator' style='background-color: #e8f8f5;'><div class='status-dot connected-dot'></div><strong>Connected to ESP32</strong></div>", unsafe_allow_html=True)
-        elif st.session_state.simulation_mode:
-            st.markdown("<div class='status-indicator' style='background-color: #e8f0f9;'><div class='status-dot simulation-dot'></div><strong>Running in simulation mode</strong></div>", unsafe_allow_html=True)
-        else:
-            st.markdown("<div class='status-indicator' style='background-color: #fdedec;'><div class='status-dot disconnected-dot'></div><strong>Not connected</strong></div>", unsafe_allow_html=True)
-    
-    st.markdown('</div>', unsafe_allow_html=True)
+    # Use the new connection sidebar with IP address input option
+    create_connection_sidebar()
     
     # Tabs
     tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["Dashboard", "Manual Entry", "History", "Recommendations", "LLM Analysis", "AI Farmer Intelligence 🤖", "Help & Info 📚"])
@@ -1168,6 +1261,91 @@ def main_dashboard():
                     
                     The **Health Percentage** indicates how optimal each nutrient level is for plant growth.
                     """)
+                
+                # Add Nutrient Distribution Pie Chart
+                st.markdown('<h3 class="sub-header">Nutrient Distribution</h3>', unsafe_allow_html=True)
+                
+                # Create pie chart for NPK distribution
+                if st.session_state.fertility_prediction:
+                    npk_data = st.session_state.fertility_prediction
+                    
+                    # Extract NPK values
+                    n_value = npk_data["n_value"]
+                    p_value = npk_data["p_value"]
+                    k_value = npk_data["k_value"]
+                    
+                    # Create two columns for pie chart and legend
+                    pie_col1, pie_col2 = st.columns([3, 1])
+                    
+                    with pie_col1:
+                        # Create pie chart
+                        labels = ['Nitrogen (N)', 'Phosphorus (P)', 'Potassium (K)']
+                        values = [n_value, p_value, k_value]
+                        
+                        # Define colors based on NPK categories
+                        colors = [
+                            '#FF5252' if npk_data["n_category"] == "Low" else 
+                            '#FFC107' if npk_data["n_category"] == "Medium" else 
+                            '#4CAF50' if npk_data["n_category"] == "High" else '#2196F3',
+                            
+                            '#FF5252' if npk_data["p_category"] == "Low" else 
+                            '#FFC107' if npk_data["p_category"] == "Medium" else 
+                            '#4CAF50' if npk_data["p_category"] == "High" else '#2196F3',
+                            
+                            '#FF5252' if npk_data["k_category"] == "Low" else 
+                            '#FFC107' if npk_data["k_category"] == "Medium" else 
+                            '#4CAF50' if npk_data["k_category"] == "High" else '#2196F3'
+                        ]
+                        
+                        # Calculate percentages for display
+                        total = sum(values)
+                        if total > 0:
+                            percentages = [round((val/total)*100, 1) for val in values]
+                        else:
+                            # If total is zero, set equal percentages or zeros
+                            percentages = [0, 0, 0]
+                        
+                        # Create custom hover text
+                        hover_text = [
+                            f"Nitrogen: {n_value:.1f} mg/kg ({percentages[0]}%)<br>Status: {npk_data['n_category']}",
+                            f"Phosphorus: {p_value:.1f} mg/kg ({percentages[1]}%)<br>Status: {npk_data['p_category']}",
+                            f"Potassium: {k_value:.1f} mg/kg ({percentages[2]}%)<br>Status: {npk_data['k_category']}"
+                        ]
+                        
+                        # Create pie chart
+                        fig = go.Figure(data=[go.Pie(
+                            labels=labels,
+                            values=values,
+                            hole=.4,
+                            hoverinfo='text',
+                            hovertext=hover_text,
+                            marker=dict(colors=colors),
+                            textinfo='label+percent',
+                            textfont=dict(size=12),
+                            insidetextorientation='radial'
+                        )])
+                        
+                        fig.update_layout(
+                            title="Soil Nutrient Distribution",
+                            height=400,
+                            margin=dict(l=20, r=20, t=50, b=20),
+                        )
+                        
+                        st.plotly_chart(fig, use_container_width=True)
+                    
+                    with pie_col2:
+                        # Create legend/explanation
+                        st.markdown("### Nutrient Ratio")
+                        st.markdown(f"**N**: {percentages[0]}%")
+                        st.markdown(f"**P**: {percentages[1]}%")
+                        st.markdown(f"**K**: {percentages[2]}%")
+                        
+                        # Add ideal ratio information
+                        st.markdown("### Ideal NPK Ratio")
+                        st.markdown("General crops: 3-1-2")
+                        st.markdown("Leafy greens: 4-1-2")
+                        st.markdown("Root vegetables: 1-2-3")
+                        st.markdown("Fruits/flowers: 1-2-2")
             
             # Soil Health Radar Chart
             st.markdown('<h2 class="sub-header">Soil Health Overview</h2>', unsafe_allow_html=True)
@@ -1316,8 +1494,8 @@ def main_dashboard():
                     return 'background-color: #E3F2FD; color: #1976D2; font-weight: bold'
                 return ''
             
-            # Apply styling to NPK category columns
-            styled_df = history_df.style.applymap(
+            # Apply styling to NPK category columns - using .map instead of .applymap to avoid deprecation warning
+            styled_df = history_df.style.map(
                 highlight_npk_categories, 
                 subset=['n_category', 'p_category', 'k_category']
             )
@@ -1337,29 +1515,151 @@ def main_dashboard():
             # Historical trends
             st.markdown('<h2 class="sub-header">Historical Trends</h2>', unsafe_allow_html=True)
             
-            # Select parameter to visualize
-            param = st.selectbox(
-                "Select Parameter",
-                ["temperature", "moisture", "nitrogen", "phosphorus", "potassium"]
-            )
+            # Create tabs for different trend visualizations
+            trend_tab1, trend_tab2, trend_tab3 = st.tabs(["Single Parameter", "Multi-Parameter Comparison", "NPK Balance Over Time"])
             
-            # Create line chart with improved styling
-            fig = px.line(
-                history_df,
-                x="timestamp",
-                y=param,
-                title=f"{param.capitalize()} Over Time"
-            )
+            with trend_tab1:
+                # Select parameter to visualize
+                param = st.selectbox(
+                    "Select Parameter",
+                    ["temperature", "moisture", "nitrogen", "phosphorus", "potassium"]
+                )
+                
+                # Create line chart with improved styling
+                fig = px.line(
+                    history_df,
+                    x="timestamp",
+                    y=param,
+                    title=f"{param.capitalize()} Over Time"
+                )
+                
+                # Update chart styling
+                fig.update_layout(
+                    plot_bgcolor='rgba(240, 248, 235, 0.6)',
+                    paper_bgcolor='rgba(0,0,0,0)',
+                    font_family="Roboto",
+                    height=500,
+                    xaxis=dict(title="Time"),
+                    yaxis=dict(title=f"{param.capitalize()} Value")
+                )
+                
+                st.plotly_chart(fig, use_container_width=True)
             
-            # Update chart styling
-            fig.update_layout(
-                plot_bgcolor='rgba(240, 248, 235, 0.6)',
-                paper_bgcolor='rgba(0,0,0,0)',
-                font_family="Roboto",
-                title_font_family="Roboto Slab",
-                title_font_color="#388E3C",
-                legend_title_font_color="#388E3C"
-            )
+            with trend_tab2:
+                st.subheader("Compare Multiple Parameters")
+                
+                # Multi-select for parameters
+                selected_params = st.multiselect(
+                    "Select Parameters to Compare",
+                    ["temperature", "moisture", "nitrogen", "phosphorus", "potassium"],
+                    default=["nitrogen", "phosphorus", "potassium"]
+                )
+                
+                if selected_params:
+                    # Create multi-line chart
+                    multi_fig = go.Figure()
+                    
+                    colors = {
+                        "temperature": "#FF5722",
+                        "moisture": "#03A9F4",
+                        "nitrogen": "#2196F3",
+                        "phosphorus": "#FFC107",
+                        "potassium": "#9C27B0"
+                    }
+                    
+                    for param in selected_params:
+                        multi_fig.add_trace(go.Scatter(
+                            x=history_df["timestamp"],
+                            y=history_df[param],
+                            mode='lines+markers',
+                            name=param.capitalize(),
+                            line=dict(color=colors.get(param, "#000000"), width=2),
+                            marker=dict(size=6)
+                        ))
+                    
+                    # Update layout
+                    multi_fig.update_layout(
+                        title="Parameter Comparison Over Time",
+                        plot_bgcolor='rgba(240, 248, 235, 0.6)',
+                        paper_bgcolor='rgba(0,0,0,0)',
+                        font_family="Roboto",
+                        height=500,
+                        xaxis=dict(title="Time"),
+                        yaxis=dict(title="Value"),
+                        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+                    )
+                    
+                    st.plotly_chart(multi_fig, use_container_width=True)
+                    
+                    # Add correlation heatmap
+                    if len(selected_params) > 1:
+                        st.subheader("Parameter Correlation")
+                        corr_df = history_df[selected_params].corr()
+                        corr_fig = px.imshow(
+                            corr_df,
+                            text_auto=True,
+                            color_continuous_scale='Viridis',
+                            aspect="auto"
+                        )
+                        corr_fig.update_layout(height=400)
+                        st.plotly_chart(corr_fig, use_container_width=True)
+                else:
+                    st.info("Please select at least one parameter to display the chart")
+            
+            with trend_tab3:
+                st.subheader("NPK Balance Over Time")
+                
+                # Create area chart for NPK balance
+                npk_fig = go.Figure()
+                
+                # Add traces for N, P, K
+                npk_fig.add_trace(go.Scatter(
+                    x=history_df["timestamp"],
+                    y=history_df["nitrogen"],
+                    mode='lines',
+                    name='Nitrogen',
+                    line=dict(width=0.5, color='#2196F3'),
+                    stackgroup='one',
+                    groupnorm='percent'
+                ))
+                
+                npk_fig.add_trace(go.Scatter(
+                    x=history_df["timestamp"],
+                    y=history_df["phosphorus"],
+                    mode='lines',
+                    name='Phosphorus',
+                    line=dict(width=0.5, color='#FFC107'),
+                    stackgroup='one'
+                ))
+                
+                npk_fig.add_trace(go.Scatter(
+                    x=history_df["timestamp"],
+                    y=history_df["potassium"],
+                    mode='lines',
+                    name='Potassium',
+                    line=dict(width=0.5, color='#9C27B0'),
+                    stackgroup='one'
+                ))
+                
+                # Update layout
+                npk_fig.update_layout(
+                    title="NPK Balance Over Time (Percentage)",
+                    plot_bgcolor='rgba(240, 248, 235, 0.6)',
+                    paper_bgcolor='rgba(0,0,0,0)',
+                    font_family="Roboto",
+                    height=500,
+                    xaxis=dict(title="Time"),
+                    yaxis=dict(title="Percentage (%)"),
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+                )
+                
+                st.plotly_chart(npk_fig, use_container_width=True)
+                
+                # Add explanation
+                st.info(
+                    "This chart shows the relative balance of Nitrogen, Phosphorus, and Potassium over time. "
+                    "The ideal NPK ratio depends on your specific crops and soil conditions."
+                )
             
             # Update line color based on parameter
             if param == "nitrogen":

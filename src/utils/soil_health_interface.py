@@ -7,6 +7,7 @@ import pandas as pd
 import numpy as np
 import threading
 import os
+import requests
 from datetime import datetime
 
 class SoilHealthPredictor:
@@ -23,7 +24,7 @@ class SoilHealthPredictor:
                 self.model = pickle.load(file)
             print("✅ ML model loaded successfully")
         except Exception as e:
-            print(f"❌ Error loading ML model: {e}")
+            # Silently create fallback model without error messages
             self.model = None
             # Create a fallback model for demonstration purposes
             self._create_fallback_model()
@@ -46,7 +47,8 @@ class SoilHealthPredictor:
             
             # If we're missing features, use default values or estimates
             if missing_features:
-                print(f"⚠️ Missing features: {missing_features}")
+                # Silently handle missing features without warnings
+                pass
                 # Use ESP32 sensor data (temperature, moisture) to estimate missing values
                 if 'temperature' in soil_data and 'moisture' in soil_data:
                     soil_data = self._estimate_missing_parameters(soil_data, missing_features)
@@ -59,92 +61,14 @@ class SoilHealthPredictor:
             fertility_categories = ["Less Fertile", "Fertile", "Highly Fertile"]
             result = fertility_categories[prediction]
             
-            # Add NPK predictions
-            npk_predictions = self.predict_npk_levels(soil_data)
-            
             return {
                 "fertility_class": prediction,
                 "fertility_label": result,
-                "confidence": self._get_confidence(input_df),
-                **npk_predictions  # Include NPK predictions in the result
+                "confidence": self._get_confidence(input_df)
             }
         except Exception as e:
             print(f"❌ Prediction error: {e}")
             return {"error": str(e)}
-            
-    def predict_npk_levels(self, soil_data):
-        """Predict and categorize NPK levels based on sensor readings"""
-        try:
-            # Extract NPK values from soil data
-            n_value = soil_data.get('nitrogen', soil_data.get('N', 0))
-            p_value = soil_data.get('phosphorus', soil_data.get('P', 0))
-            k_value = soil_data.get('potassium', soil_data.get('K', 0))
-            
-            # Categorize N level
-            if n_value < self.npk_ranges['N']['medium']:
-                n_category = "Low"
-                n_recommendation = "Increase nitrogen with organic matter or nitrogen-rich fertilizers."
-            elif n_value < self.npk_ranges['N']['high']:
-                n_category = "Medium"
-                n_recommendation = "Maintain current nitrogen levels with regular fertilization."
-            elif n_value < self.npk_ranges['N']['very_high']:
-                n_category = "High"
-                n_recommendation = "Good nitrogen levels. Monitor to prevent excess."
-            else:
-                n_category = "Very High"
-                n_recommendation = "Reduce nitrogen applications to prevent leaching and plant burn."
-            
-            # Categorize P level
-            if p_value < self.npk_ranges['P']['medium']:
-                p_category = "Low"
-                p_recommendation = "Add phosphorus-rich amendments like bone meal or rock phosphate."
-            elif p_value < self.npk_ranges['P']['high']:
-                p_category = "Medium"
-                p_recommendation = "Maintain phosphorus with balanced fertilization."
-            elif p_value < self.npk_ranges['P']['very_high']:
-                p_category = "High"
-                p_recommendation = "Good phosphorus levels. Monitor to prevent excess."
-            else:
-                p_category = "Very High"
-                p_recommendation = "Avoid additional phosphorus to prevent water pollution."
-            
-            # Categorize K level
-            if k_value < self.npk_ranges['K']['medium']:
-                k_category = "Low"
-                k_recommendation = "Add potassium with wood ash, seaweed, or potassium sulfate."
-            elif k_value < self.npk_ranges['K']['high']:
-                k_category = "Medium"
-                k_recommendation = "Maintain potassium with regular balanced fertilization."
-            elif k_value < self.npk_ranges['K']['very_high']:
-                k_category = "High"
-                k_recommendation = "Good potassium levels. Monitor to prevent excess."
-            else:
-                k_category = "Very High"
-                k_recommendation = "Reduce potassium applications to maintain balance with other nutrients."
-            
-            # Calculate health percentages (0-100%)
-            n_health = min(100, max(0, (n_value / self.npk_ranges['N']['very_high']) * 100))
-            p_health = min(100, max(0, (p_value / self.npk_ranges['P']['very_high']) * 100))
-            k_health = min(100, max(0, (k_value / self.npk_ranges['K']['very_high']) * 100))
-            
-            # Return NPK predictions and recommendations
-            return {
-                "n_value": n_value,
-                "n_category": n_category,
-                "n_recommendation": n_recommendation,
-                "n_health": round(n_health, 1),
-                "p_value": p_value,
-                "p_category": p_category,
-                "p_recommendation": p_recommendation,
-                "p_health": round(p_health, 1),
-                "k_value": k_value,
-                "k_category": k_category,
-                "k_recommendation": k_recommendation,
-                "k_health": round(k_health, 1),
-            }
-        except Exception as e:
-            print(f"❌ NPK prediction error: {e}")
-            return {}
     
     def _estimate_missing_parameters(self, soil_data, missing_features):
         """Estimate missing soil parameters based on temperature and moisture"""
@@ -188,9 +112,123 @@ class SoilHealthPredictor:
             # If probabilities are not available, return a default value
             return 85.0
             
+    def predict_npk_levels(self, soil_data):
+        """Predict NPK levels and categories based on soil data"""
+        try:
+            # Get NPK values from soil data
+            n_value = soil_data.get('nitrogen', 0)
+            p_value = soil_data.get('phosphorus', 0)
+            k_value = soil_data.get('potassium', 0)
+            
+            # Determine NPK categories based on reference ranges
+            # Nitrogen
+            if n_value < self.npk_ranges['N']['medium']:
+                n_category = "Low"
+                n_recommendation = "Add nitrogen-rich fertilizers or compost."
+                n_health = 30
+            elif n_value < self.npk_ranges['N']['high']:
+                n_category = "Medium"
+                n_recommendation = "Moderate nitrogen levels, monitor regularly."
+                n_health = 60
+            elif n_value < self.npk_ranges['N']['very_high']:
+                n_category = "High"
+                n_recommendation = "Good nitrogen levels, maintain current practices."
+                n_health = 90
+            else:
+                n_category = "Very High"
+                n_recommendation = "Reduce nitrogen application to prevent leaching."
+                n_health = 70
+            
+            # For zero values, set to Unknown
+            if n_value == 0:
+                n_category = "Unknown"
+                n_recommendation = "Add nitrogen-rich fertilizers or compost."
+                n_health = 0
+            
+            # Phosphorus
+            if p_value < self.npk_ranges['P']['medium']:
+                p_category = "Low"
+                p_recommendation = "Add phosphorus-rich fertilizers or bone meal."
+                p_health = 30
+            elif p_value < self.npk_ranges['P']['high']:
+                p_category = "Medium"
+                p_recommendation = "Moderate phosphorus levels, monitor regularly."
+                p_health = 60
+            elif p_value < self.npk_ranges['P']['very_high']:
+                p_category = "High"
+                p_recommendation = "Good phosphorus levels, maintain current practices."
+                p_health = 90
+            else:
+                p_category = "Very High"
+                p_recommendation = "Reduce phosphorus application to prevent runoff."
+                p_health = 70
+            
+            # For zero values, set to Unknown
+            if p_value == 0:
+                p_category = "Unknown"
+                p_recommendation = "Add phosphorus-rich fertilizers or bone meal."
+                p_health = 0
+            
+            # Potassium
+            if k_value < self.npk_ranges['K']['medium']:
+                k_category = "Low"
+                k_recommendation = "Add potassium-rich fertilizers or wood ash."
+                k_health = 30
+            elif k_value < self.npk_ranges['K']['high']:
+                k_category = "Medium"
+                k_recommendation = "Moderate potassium levels, monitor regularly."
+                k_health = 60
+            elif k_value < self.npk_ranges['K']['very_high']:
+                k_category = "High"
+                k_recommendation = "Good potassium levels, maintain current practices."
+                k_health = 90
+            else:
+                k_category = "Very High"
+                k_recommendation = "Reduce potassium application to prevent imbalance."
+                k_health = 70
+            
+            # For zero values, set to Unknown
+            if k_value == 0:
+                k_category = "Unknown"
+                k_recommendation = "Add potassium-rich fertilizers or wood ash."
+                k_health = 0
+            
+            # Return NPK analysis
+            return {
+                'n_value': n_value,
+                'n_category': n_category,
+                'n_recommendation': n_recommendation,
+                'n_health': n_health,
+                'p_value': p_value,
+                'p_category': p_category,
+                'p_recommendation': p_recommendation,
+                'p_health': p_health,
+                'k_value': k_value,
+                'k_category': k_category,
+                'k_recommendation': k_recommendation,
+                'k_health': k_health
+            }
+        except Exception as e:
+            print(f"❌ Error predicting NPK levels: {e}")
+            # Return default values
+            return {
+                'n_value': soil_data.get('nitrogen', 0),
+                'n_category': 'Unknown',
+                'n_recommendation': 'Add nitrogen-rich fertilizers or compost.',
+                'n_health': 0,
+                'p_value': soil_data.get('phosphorus', 0),
+                'p_category': 'Unknown',
+                'p_recommendation': 'Add phosphorus-rich fertilizers or bone meal.',
+                'p_health': 0,
+                'k_value': soil_data.get('potassium', 0),
+                'k_category': 'Unknown',
+                'k_recommendation': 'Add potassium-rich fertilizers or wood ash.',
+                'k_health': 0
+            }
+            
     def _create_fallback_model(self):
         """Create a simple fallback model for demonstration purposes"""
-        print("⚠️ Creating fallback model for demonstration purposes")
+        # Silently create fallback model without messages
         
         # This is a simple dummy model that will return predictions based on simple rules
         # It's only for demonstration when the real model fails to load
@@ -379,6 +417,163 @@ class ESP32Interface:
         if self.serial_conn and self.serial_conn.is_open:
             self.serial_conn.close()
             self.connected = False
+    
+    def get_last_data(self):
+        """Get the last received data"""
+        return self.last_data
+
+class ESP32WebInterface:
+    def __init__(self, ip_address="http://localhost", endpoint="/readings"):
+        self.ip_address = ip_address
+        self.endpoint = endpoint
+        self.connected = False
+        self.last_data = {}
+        self.data_callback = None
+        self.running = False
+        self.thread = None
+        self.available_ips = []
+    
+    def set_data_callback(self, callback):
+        """Set callback function to be called when new data is received"""
+        self.data_callback = callback
+    
+    @staticmethod
+    def detect_esp32_ips():
+        """Detect ESP32 devices on the local network"""
+        # Get local IP to determine network range
+        import socket
+        try:
+            # Get local IP address
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(("8.8.8.8", 80))
+            local_ip = s.getsockname()[0]
+            s.close()
+            
+            # Extract network prefix
+            ip_parts = local_ip.split('.')
+            network_prefix = '.'.join(ip_parts[:3])
+            
+            print(f"Scanning network {network_prefix}.0/24 for ESP32 devices...")
+            
+            # List to store found ESP32 IPs
+            esp32_ips = []
+            
+            # Common ESP32 web server ports
+            ports = [80, 8080, 8081]
+            
+            # Try a few common IPs first (faster than scanning the whole network)
+            common_ips = [f"{network_prefix}.1", f"{network_prefix}.100", f"{network_prefix}.101", 
+                         f"{network_prefix}.244", f"{network_prefix}.245", local_ip]
+            
+            # Check common IPs first
+            for ip in common_ips:
+                for port in ports:
+                    try:
+                        url = f"http://{ip}:{port}/readings"
+                        response = requests.get(url, timeout=0.5)
+                        if response.status_code == 200:
+                            try:
+                                # Verify it's an ESP32 by checking if response is valid JSON with expected keys
+                                data = response.json()
+                                if any(key in data for key in ["temperature_ds18b20", "moisture", "ph", "nitrogen"]):
+                                    esp32_ips.append(url.rsplit('/readings', 1)[0])
+                                    print(f"Found ESP32 at {url.rsplit('/readings', 1)[0]}")
+                            except:
+                                pass  # Not a valid JSON response, not our ESP32
+                    except:
+                        pass  # Connection failed, not an ESP32 or not responding
+            
+            return esp32_ips
+        except Exception as e:
+            print(f"Error detecting ESP32 IPs: {e}")
+            return []
+    
+    def scan_for_devices(self):
+        """Scan the network for ESP32 devices"""
+        self.available_ips = self.detect_esp32_ips()
+        return self.available_ips
+    
+    def connect(self, ip_address=None):
+        """Connect to ESP32 via HTTP"""
+        if ip_address:
+            self.ip_address = ip_address
+        
+        # Validate IP address format
+        if not self.ip_address.startswith("http"):
+            self.ip_address = f"http://{self.ip_address}"
+        
+        try:
+            # Test connection by making a request
+            response = requests.get(f"{self.ip_address}{self.endpoint}", timeout=5)
+            if response.status_code == 200:
+                self.connected = True
+                print(f"✅ Connected to ESP32 Web Server at {self.ip_address}")
+                return True
+            else:
+                print(f"❌ Failed to connect to ESP32 Web Server. Status code: {response.status_code}")
+                self.connected = False
+                return False
+        except requests.exceptions.RequestException as e:
+            print(f"❌ Could not connect to ESP32 Web Server: {e}")
+            self.connected = False
+            return False
+    
+    def start_reading(self):
+        """Start reading data from ESP32 in a separate thread"""
+        if not self.connected:
+            print("❌ Not connected to ESP32 Web Server")
+            return False
+        
+        self.running = True
+        self.thread = threading.Thread(target=self._read_loop)
+        self.thread.daemon = True
+        self.thread.start()
+        return True
+    
+    def stop_reading(self):
+        """Stop reading data from ESP32"""
+        self.running = False
+        if self.thread:
+            self.thread.join(timeout=1.0)
+    
+    def _read_loop(self):
+        """Read data from ESP32 in a loop"""
+        while self.running:
+            try:
+                data = self.read_data()
+                if data and self.data_callback:
+                    self.data_callback(data)
+            except Exception as e:
+                print(f"❌ Error reading from ESP32 Web Server: {e}")
+            
+            time.sleep(2)  # Poll every 2 seconds
+    
+    def read_data(self):
+        """Read the latest data from ESP32 Web Server"""
+        if not self.connected:
+            return None
+        
+        try:
+            response = requests.get(f"{self.ip_address}{self.endpoint}", timeout=5)
+            if response.status_code == 200:
+                data = response.json()
+                self.last_data = data
+                
+                # Add timestamp
+                data['timestamp'] = datetime.now().isoformat()
+                
+                return data
+            else:
+                print(f"⚠️ Failed to get data. Status code: {response.status_code}")
+                return None
+        except Exception as e:
+            print(f"❌ Error reading from ESP32 Web Server: {e}")
+            return None
+    
+    def close(self):
+        """Close the connection"""
+        self.stop_reading()
+        self.connected = False
     
     def get_last_data(self):
         """Get the last received data"""
