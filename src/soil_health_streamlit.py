@@ -460,10 +460,10 @@ def disconnect_esp32():
         st.session_state.connection_thread = None
     
     # Close the ESP32 interface
-     if st.session_state.esp32_interface:
-         st.session_state.esp32_interface.close()
-         st.session_state.connected = False
-         st.session_state.esp32_interface = None
+    if st.session_state.esp32_interface:
+        st.session_state.esp32_interface.close()
+        st.session_state.connected = False
+        st.session_state.esp32_interface = None
         st.info("Disconnected from ESP32")
 
 # Generate simulated data
@@ -697,7 +697,7 @@ def create_connection_sidebar():
         st.header("🔄 Simulation")
         
         if not st.session_state.simulation_mode:
-            if st.button("Start Simulation"):
+            if st.button("Start Simulation", key="simulation_control_start"):
                 start_simulation()
         else:
             if st.button("Stop Simulation"):
@@ -1289,7 +1289,7 @@ def main_dashboard():
             # Add buttons for quick actions
             col1, col2 = st.columns(2)
             with col1:
-                if st.button("Start Simulation"):
+                if st.button("Start Simulation", key="dashboard_start_simulation"):
                     start_simulation()
             with col2:
                 if st.button("Connect to ESP32"):
@@ -1690,8 +1690,6 @@ def main_dashboard():
             with col3:
                 potassium_fig = create_trend_graph('potassium', 'Potassium (mg/kg)', '#9C27B0')
                 st.plotly_chart(potassium_fig, use_container_width=True)
-        else:
-            st.info("No data available. Please connect to ESP32 or start simulation.")
     
     # Manual Entry Tab
     with tab2:
