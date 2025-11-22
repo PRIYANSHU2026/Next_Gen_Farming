@@ -6,6 +6,8 @@ import time
 import threading
 import json
 import random
+import os
+from typing import Dict, Optional
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -16,6 +18,39 @@ from models.plant_recommendation import PlantRecommendationSystem
 
 # Set page configuration
 st.set_page_config(page_title="Next-Gen Farming Dashboard", layout="wide", initial_sidebar_state="expanded")
+
+# Inject custom farmer theme styles
+st.markdown(
+    """
+    <style>
+        :root {
+            --farmer-green: #2e7d32;
+            --farmer-light-green: #4caf50;
+            --farmer-amber: #ff9800;
+            --farmer-brown: #8d6e63;
+            --farmer-sky: #90caf9;
+            --card-bg: #f9fbf7;
+        }
+        .stApp {
+            background: linear-gradient(180deg, #f0fff4 0%, #ffffff 100%);
+        }
+        .metric-card div[data-testid="stMetric"] {
+            background-color: var(--card-bg);
+            border: 1px solid #e8f5e9;
+            border-radius: 12px;
+            padding: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        }
+        .section-header {
+            color: var(--farmer-green);
+        }
+        .alert-good { color: var(--farmer-green); }
+        .alert-warn { color: var(--farmer-amber); }
+        .alert-bad { color: #c62828; }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
 # Initialize session state variables
 def init_session_state():
@@ -54,9 +89,131 @@ def init_session_state():
         
     if "active_tab" not in st.session_state:
         st.session_state.active_tab = "dashboard"
+    if "ai_provider" not in st.session_state:
+        st.session_state.ai_provider = "Mistral"
+    if "ai_model" not in st.session_state:
+        st.session_state.ai_model = "Mistral Small"
+    if "openrouter_api_key" not in st.session_state:
+        st.session_state.openrouter_api_key = os.getenv(
+            "OPENROUTER_API_KEY",
+            "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",
+        )
+    if "ollama_available" not in st.session_state:
+        st.session_state.ollama_available = False
 
 # Initialize session state
 init_session_state()
+
+# Detect Ollama availability
+def detect_ollama() -> bool:
+    try:
+        r = requests.get("http://localhost:11434/api/tags", timeout=1)
+        return r.status_code == 200
+    except Exception:
+        return False
+
+st.session_state.ollama_available = detect_ollama()
+
+# OpenRouter models
+TEXT_MODELS: Dict[str, str] = {
+    "Mistral Small": "mistralai/mistral-small-3.2-24b-instruct:free",
+    "Claude 3 Haiku": "anthropic/claude-3-haiku",
+    "Mistral 3.1": "mistralai/mistral-small-3.1-24b-instruct:free",
+    "Gemma": "google/gemma-3-4b-it:free",
+}
+
+def build_ai_prompt(data: Dict) -> str:
+    return (
+        "You are an agronomy expert advising a farmer.\n"
+        "Given current soil and environment readings, produce concise, actionable guidance:\n"
+        "- Irrigation plan (today and next 3 days).\n"
+        "- Fertilizer recommendations (N, P, K and amendments).\n"
+        "- Crop suitability and rotation suggestions.\n"
+        "- Risks (pH imbalance, nutrient deficiency, moisture extremes) and remedies.\n\n"
+        f"Readings: {json.dumps(data, ensure_ascii=False)}\n"
+        "Format as bullet points. Keep it practical."
+    )
+
+def call_mistral(data: Dict, api_key: str, prompt: str) -> Optional[str]:
+    try:
+        if not api_key:
+            return None
+        # Use existing integration if available
+        msa = MistralSoilAnalysis(api_key=api_key)
+        return msa.analyze(prompt)
+    except Exception:
+        return None
+
+def call_openrouter(data: Dict, api_key: str, model_label: str, prompt: str) -> Optional[str]:
+    try:
+        model = TEXT_MODELS.get(model_label, TEXT_MODELS["Mistral Small"])
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+        body = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": "You are a helpful agronomy assistant."},
+                {"role": "user", "content": prompt},
+            ],
+        }
+        r = requests.post("https://api.openrouter.ai/v1/chat/completions", headers=headers, json=body, timeout=20)
+        if r.status_code == 200:
+            js = r.json()
+            return js.get("choices", [{}])[0].get("message", {}).get("content")
+        return None
+    except Exception:
+        return None
+
+def call_ollama(data: Dict, model_label: str, prompt: str) -> Optional[str]:
+    try:
+        # Map model label to common local models
+        label_to_model = {
+            "Mistral Small": "mistral",
+            "Gemma": "gemma:2b",
+            "Claude 3 Haiku": "llama3.2:3b",
+            "Mistral 3.1": "mistral",
+        }
+        model = label_to_model.get(model_label, "mistral")
+        body = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": "You are a helpful agronomy assistant."},
+                {"role": "user", "content": prompt},
+            ],
+            "stream": False,
+        }
+        r = requests.post("http://localhost:11434/api/chat", json=body, timeout=20)
+        if r.status_code == 200:
+            js = r.json()
+            return js.get("message", {}).get("content")
+        return None
+    except Exception:
+        return None
+
+def generate_ai_recommendations(data: Dict) -> str:
+    prompt = build_ai_prompt(data)
+    # Try Mistral first
+    text = call_mistral(data, st.session_state.mistral_api_key, prompt)
+    if text:
+        return text
+    # Fallback to OpenRouter
+    text = call_openrouter(data, st.session_state.openrouter_api_key, st.session_state.ai_model, prompt)
+    if text:
+        return text
+    # Fallback to Ollama if available
+    if st.session_state.ollama_available:
+        text = call_ollama(data, st.session_state.ai_model, prompt)
+        if text:
+            return text
+    # Final heuristic fallback
+    fert = predict_soil_fertility(data)
+    lines = [
+        "• Heuristic recommendations (AI unavailable):",
+        f"  - Fertility: {fert['category']} ({fert['score']:.1f}/100)",
+    ] + [f"  - {r}" for r in fert["recommendations"]]
+    return "\n".join(lines)
 
 # Function to fetch data from ESP32
 def fetch_data(url):
@@ -361,14 +518,32 @@ with st.sidebar:
                     st.session_state.historical_data = generate_fake_historical_data()
                 st.rerun()
     
-    # Mistral API key input (for chatbot)
-    if st.session_state.active_tab == "chatbot":
+    # AI settings
+    if st.session_state.active_tab in ("chatbot", "predictions", "dashboard"):
         st.divider()
-        st.subheader("🔑 Mistral AI API")
-        api_key = st.text_input("API Key", type="password", value=st.session_state.mistral_api_key)
+        st.subheader("🤖 AI Assistant Settings")
+        provider = st.selectbox("Provider", ["Mistral", "OpenRouter", "Ollama"], index=["Mistral", "OpenRouter", "Ollama"].index(st.session_state.ai_provider))
+        if provider != st.session_state.ai_provider:
+            st.session_state.ai_provider = provider
+
+        model = st.selectbox("Model", list(TEXT_MODELS.keys()), index=list(TEXT_MODELS.keys()).index(st.session_state.ai_model))
+        if model != st.session_state.ai_model:
+            st.session_state.ai_model = model
+
+        api_key = st.text_input("Mistral API Key", type="password", value=st.session_state.mistral_api_key)
         if api_key != st.session_state.mistral_api_key:
             st.session_state.mistral_api_key = api_key
-            st.success("API key updated")
+            st.success("Mistral key updated")
+
+        or_key = st.text_input("OpenRouter API Key", type="password", value=st.session_state.openrouter_api_key)
+        if or_key != st.session_state.openrouter_api_key:
+            st.session_state.openrouter_api_key = or_key
+            st.success("OpenRouter key updated")
+
+        if st.session_state.ollama_available:
+            st.caption("✅ Ollama detected locally")
+        else:
+            st.caption("ℹ️ Ollama not detected on localhost:11434")
     
     st.divider()
     st.caption("© 2023 Next-Gen Farming")
@@ -498,9 +673,53 @@ if st.session_state.active_tab == "dashboard":
             st.subheader("Recommendations")
             for i, rec in enumerate(fertility["recommendations"]):
                 st.write(f"🔹 {rec}")
-            
             if not fertility["recommendations"]:
                 st.write("✅ Your soil parameters are within optimal ranges!")
+
+        # Alerts based on thresholds
+        st.subheader("🚨 Smart Alerts")
+        alerts = []
+        if data.get("moisture", 60) < 40:
+            alerts.append(("Low moisture detected — consider irrigating.", "alert-warn"))
+        if data.get("moisture", 60) > 80:
+            alerts.append(("High moisture — reduce irrigation and check drainage.", "alert-warn"))
+        ph = data.get("ph")
+        if ph is not None and (ph < 6.0 or ph > 7.5):
+            alerts.append(("pH out of optimal range (6.0–7.5).", "alert-bad"))
+        for msg, cls in alerts:
+            st.markdown(f"<div class='{cls}'>• {msg}</div>", unsafe_allow_html=True)
+        if not alerts:
+            st.markdown("<div class='alert-good'>• All readings in healthy ranges.</div>", unsafe_allow_html=True)
+
+        # Live trends plots
+        st.subheader("📈 Live Trends")
+        if st.session_state.historical_data:
+            hist_df = pd.DataFrame(st.session_state.historical_data)
+            if "timestamp" in hist_df.columns:
+                hist_df["ts"] = pd.to_datetime(hist_df["timestamp"])
+            cols = [c for c in ["temperature", "moisture", "ph", "nitrogen", "phosphorus", "potassium"] if c in hist_df.columns]
+            if cols:
+                line_fig = px.line(hist_df, x="ts", y=cols, labels={"ts": "Time"}, title="Sensor Trends")
+                line_fig.update_layout(height=350, legend_title_text="Sensors", margin=dict(l=10, r=10, t=40, b=10))
+                st.plotly_chart(line_fig, use_container_width=True)
+
+            # NPK stacked bar for the latest 10 points
+            if all(c in hist_df.columns for c in ["nitrogen", "phosphorus", "potassium"]) and "ts" in hist_df.columns:
+                recent = hist_df.tail(10)
+                npk_fig = go.Figure()
+                npk_fig.add_trace(go.Bar(x=recent["ts"], y=recent["nitrogen"], name="Nitrogen", marker_color="#66bb6a"))
+                npk_fig.add_trace(go.Bar(x=recent["ts"], y=recent["phosphorus"], name="Phosphorus", marker_color="#ffb74d"))
+                npk_fig.add_trace(go.Bar(x=recent["ts"], y=recent["potassium"], name="Potassium", marker_color="#42a5f5"))
+                npk_fig.update_layout(barmode="stack", title="NPK Recent Levels", height=320, margin=dict(l=10, r=10, t=40, b=10))
+                st.plotly_chart(npk_fig, use_container_width=True)
+
+        # AI agronomy recommendations
+        st.subheader("🤖 AI Agronomy Advice")
+        if st.button("Generate AI Recommendations", use_container_width=True):
+            with st.spinner("Generating AI advice..."):
+                advice = generate_ai_recommendations(data)
+            st.success("AI advice ready")
+            st.markdown(advice)
         
         # Add refresh button
         if st.button("Refresh Data"):
